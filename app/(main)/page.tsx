@@ -10,6 +10,7 @@ import { MarketOverview } from "@/components/landing/market-overview";
 import { NewsSection } from "@/components/landing/news-section";
 import { AiAssistantPreview } from "@/components/landing/ai-assistant-preview";
 import { StakingProducts } from "@/components/landing/staking-products";
+import { DepositCrypto } from "@/components/landing/deposit-crypto";
 import { DownloadApp } from "@/components/landing/download-app";
 import { SecuritySection } from "@/components/landing/security-section";
 import { Testimonials } from "@/components/landing/testimonials";
@@ -40,6 +41,7 @@ export default async function Home() {
       <MarketOverview />
       <AiAssistantPreview />
       <StakingProducts />
+      <DepositCrypto />
       <NewsSection />
       <SecuritySection />
       <Testimonials />

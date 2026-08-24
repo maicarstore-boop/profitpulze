@@ -18,7 +18,6 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Tabs } from "@/components/ui/tabs";
 import { StatusBadge } from "@/components/admin/status-badge";
-import { holdings, recentActivity } from "@/lib/portfolio-data";
 import { supportTickets } from "@/lib/admin-data";
 import { ALL_ROLES, ROLE_LABELS } from "@/lib/auth/roles";
 import { useAuth } from "@/components/auth/auth-provider";
@@ -56,12 +55,23 @@ interface LoginLogEntry {
   createdAt: string;
 }
 
+interface WalletTransactionEntry {
+  id: string;
+  type: string;
+  amount: number;
+  note: string;
+  createdAt: string;
+}
+
 export default function AdminUserDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const { user: currentAdmin } = useAuth();
   const [user, setUser] = useState<AdminUserDetail | null>(null);
   const [auditLog, setAuditLog] = useState<AuditEntry[]>([]);
   const [loginHistory, setLoginHistory] = useState<LoginLogEntry[]>([]);
+  const [wallet, setWallet] = useState<{ available: number; locked: number; currency: string } | null>(null);
+  const [holdings, setHoldings] = useState<{ symbol: string; quantity: number }[]>([]);
+  const [transactions, setTransactions] = useState<WalletTransactionEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
@@ -75,6 +85,9 @@ export default function AdminUserDetailPage({ params }: { params: Promise<{ id: 
       const data = await res.json();
       setUser(data.user);
       setAuditLog(data.auditLog ?? []);
+      setWallet(data.wallet ?? null);
+      setHoldings(data.holdings ?? []);
+      setTransactions(data.transactions ?? []);
       setSelectedRole(data.user.role);
 
       const loginRes = await fetch(`/api/admin/login-logs?email=${encodeURIComponent(data.user.email)}&limit=8`);
@@ -225,23 +238,38 @@ export default function AdminUserDetailPage({ params }: { params: Promise<{ id: 
                 <Card>
                   <CardHeader><CardTitle>Wallet Balances</CardTitle></CardHeader>
                   <CardContent className="space-y-2 pt-0">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="font-medium">USDT (cash)</span>
+                      <span className="text-muted-foreground">
+                        {wallet ? wallet.available.toFixed(2) : "—"}
+                        {wallet && wallet.locked > 0 ? ` (+${wallet.locked.toFixed(2)} locked)` : ""}
+                      </span>
+                    </div>
                     {holdings.map((h) => (
                       <div key={h.symbol} className="flex items-center justify-between text-sm">
                         <span className="font-medium">{h.symbol}</span>
                         <span className="text-muted-foreground">{h.quantity}</span>
                       </div>
                     ))}
+                    {holdings.length === 0 && (
+                      <p className="text-xs text-muted-foreground">No crypto asset holdings.</p>
+                    )}
                   </CardContent>
                 </Card>
                 <Card>
-                  <CardHeader><CardTitle>Recent Trading Activity</CardTitle></CardHeader>
+                  <CardHeader><CardTitle>Recent Wallet Activity</CardTitle></CardHeader>
                   <CardContent className="space-y-2 pt-0">
-                    {recentActivity.map((a) => (
-                      <div key={a.id} className="flex items-center justify-between text-sm">
-                        <span>{a.type} {a.asset}</span>
-                        <span className="text-muted-foreground">{a.amount}</span>
+                    {transactions.map((t) => (
+                      <div key={t.id} className="flex items-center justify-between text-sm">
+                        <span className="truncate">{t.note || t.type}</span>
+                        <span className={t.amount >= 0 ? "text-success" : "text-danger"}>
+                          {t.amount >= 0 ? "+" : ""}${t.amount.toFixed(2)}
+                        </span>
                       </div>
                     ))}
+                    {transactions.length === 0 && (
+                      <p className="text-xs text-muted-foreground">No wallet activity recorded for this user yet.</p>
+                    )}
                   </CardContent>
                 </Card>
               </div>

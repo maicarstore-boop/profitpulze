@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useCoins } from "@/hooks/use-coins";
 import { formatCompact } from "@/lib/market-data";
-import { holdings } from "@/lib/portfolio-data";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs } from "@/components/ui/tabs";
@@ -40,8 +40,14 @@ function CurrencyToggle({ value, onChange }: { value: DisplayCurrency; onChange:
   );
 }
 
-function TotalBalanceCard({ currency, onCurrencyChange }: { currency: DisplayCurrency; onCurrencyChange: (c: DisplayCurrency) => void }) {
-  const [wallet, setWallet] = useState<{ available: number; locked: number; total: number } | null>(null);
+interface WalletBalance {
+  available: number;
+  locked: number;
+  total: number;
+}
+
+function useWalletBalance() {
+  const [wallet, setWallet] = useState<WalletBalance | null>(null);
 
   useEffect(() => {
     fetch("/api/wallet")
@@ -49,16 +55,51 @@ function TotalBalanceCard({ currency, onCurrencyChange }: { currency: DisplayCur
       .then((data) => setWallet({ available: data.available, locked: data.locked, total: data.total }));
   }, []);
 
+  return wallet;
+}
+
+interface UserHolding {
+  symbol: string;
+  quantity: number;
+}
+
+function useUserHoldings() {
+  const [holdings, setHoldings] = useState<UserHolding[]>([]);
+
+  useEffect(() => {
+    fetch("/api/holdings")
+      .then((res) => res.json())
+      .then((data) => setHoldings(Array.isArray(data.holdings) ? data.holdings : []))
+      .catch(() => {});
+  }, []);
+
+  return holdings;
+}
+
+function TotalBalanceCard({
+  cashTotal,
+  holdingsValue,
+  currency,
+  onCurrencyChange,
+}: {
+  cashTotal: number | null;
+  holdingsValue: number;
+  currency: DisplayCurrency;
+  onCurrencyChange: (c: DisplayCurrency) => void;
+}) {
+  const combinedTotal = cashTotal === null ? null : cashTotal + holdingsValue;
+
   return (
     <Card className="mb-6">
       <CardContent className="flex flex-wrap items-start justify-between gap-4 pt-6">
         <div>
           <div className="text-xs text-muted-foreground">Total Balance</div>
-          <div className="mt-1 text-3xl font-bold">{wallet ? formatAmount(wallet.total, currency) : "—"}</div>
-          {wallet && wallet.locked > 0 && (
+          <div className="mt-1 text-3xl font-bold">
+            {combinedTotal === null ? "—" : formatAmount(combinedTotal, currency)}
+          </div>
+          {cashTotal !== null && (
             <div className="mt-1 text-sm text-muted-foreground">
-              {formatAmount(wallet.available, currency)} available · {formatAmount(wallet.locked, currency)} locked
-              in pending withdrawals
+              {formatAmount(cashTotal, currency)} cash · {formatAmount(holdingsValue, currency)} in crypto holdings
             </div>
           )}
         </div>
@@ -68,8 +109,18 @@ function TotalBalanceCard({ currency, onCurrencyChange }: { currency: DisplayCur
   );
 }
 
-function BalancesTable({ currency }: { currency: DisplayCurrency }) {
-  const liveCoins = useCoins(100);
+function BalancesTable({
+  liveCoins,
+  holdings,
+  cashAvailable,
+  currency,
+}: {
+  liveCoins: ReturnType<typeof useCoins>;
+  holdings: UserHolding[];
+  cashAvailable: number;
+  currency: DisplayCurrency;
+}) {
+  const router = useRouter();
   const rows = liveCoins.map((coin) => {
     const holding = holdings.find((h) => h.symbol === coin.symbol);
     const quantity = holding?.quantity ?? 0;
@@ -88,8 +139,30 @@ function BalancesTable({ currency }: { currency: DisplayCurrency }) {
           </tr>
         </thead>
         <tbody>
+          <tr className="border-b border-border last:border-0 hover:bg-accent">
+            <td className="px-4 py-3">
+              <div className="flex items-center gap-2.5">
+                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-success/15 text-[10px] font-bold text-success">
+                  $
+                </span>
+                <div>
+                  <div className="font-medium">USDT</div>
+                  <div className="text-xs text-muted-foreground">Cash (wallet balance)</div>
+                </div>
+              </div>
+            </td>
+            <td className="px-4 py-3">{cashAvailable.toLocaleString(undefined, { maximumFractionDigits: 2 })} USDT</td>
+            <td className="px-4 py-3 text-muted-foreground">
+              {currency === "USD" ? `$${formatCompact(cashAvailable)}` : `${formatCompact(cashAvailable)} USDT`}
+            </td>
+            <td className="px-4 py-3" />
+          </tr>
           {rows.map((row) => (
-            <tr key={row.coin.id} className="border-b border-border last:border-0 hover:bg-accent">
+            <tr
+              key={row.coin.id}
+              onClick={() => router.push(`/convert?from=${row.coin.symbol}`)}
+              className="cursor-pointer border-b border-border last:border-0 hover:bg-accent"
+            >
               <td className="px-4 py-3">
                 <div className="flex items-center gap-2.5">
                   <span
@@ -109,7 +182,9 @@ function BalancesTable({ currency }: { currency: DisplayCurrency }) {
                 {currency === "USD" ? `$${formatCompact(row.value)}` : `${formatCompact(row.value)} USDT`}
               </td>
               <td className="px-4 py-3 text-right">
-                <Button size="sm" variant="outline">Trade</Button>
+                <Button size="sm" variant="outline" onClick={(e) => e.stopPropagation()}>
+                  Trade
+                </Button>
               </td>
             </tr>
           ))}
@@ -121,13 +196,43 @@ function BalancesTable({ currency }: { currency: DisplayCurrency }) {
 
 export function WalletView() {
   const [currency, setCurrency] = useState<DisplayCurrency>("USD");
+  const searchParams = useSearchParams();
+  const requestedTab = searchParams.get("tab");
+  const defaultKey = ["balances", "deposit", "withdraw", "history"].includes(requestedTab ?? "")
+    ? requestedTab!
+    : undefined;
+
+  const wallet = useWalletBalance();
+  const holdings = useUserHoldings();
+  const liveCoins = useCoins(100);
+  const holdingsValue = liveCoins.reduce((sum, coin) => {
+    const holding = holdings.find((h) => h.symbol === coin.symbol);
+    return sum + (holding?.quantity ?? 0) * coin.price;
+  }, 0);
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-      <TotalBalanceCard currency={currency} onCurrencyChange={setCurrency} />
+      <TotalBalanceCard
+        cashTotal={wallet ? wallet.total : null}
+        holdingsValue={holdingsValue}
+        currency={currency}
+        onCurrencyChange={setCurrency}
+      />
       <Tabs
+        defaultKey={defaultKey}
         items={[
-          { key: "balances", label: "Balances", content: <BalancesTable currency={currency} /> },
+          {
+            key: "balances",
+            label: "Balances",
+            content: (
+              <BalancesTable
+                liveCoins={liveCoins}
+                holdings={holdings}
+                cashAvailable={wallet?.available ?? 0}
+                currency={currency}
+              />
+            ),
+          },
           { key: "deposit", label: "Deposit", content: <DepositPanel /> },
           { key: "withdraw", label: "Withdraw", content: <WithdrawPanel /> },
           { key: "history", label: "History", content: <HistoryTable /> },

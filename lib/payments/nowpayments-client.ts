@@ -4,7 +4,7 @@ import { paymentsConfig } from "@/lib/payments/config";
 
 export class NowPaymentsError extends Error {}
 
-async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
+async function rawFetch<T>(path: string, init: RequestInit): Promise<T> {
   const res = await fetch(`${paymentsConfig.apiBase}${path}`, {
     ...init,
     headers: {
@@ -20,6 +20,21 @@ async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   }
 
   return res.json() as Promise<T>;
+}
+
+/**
+ * Retries once on a network-level failure (e.g. Node/undici reusing a keep-alive socket the
+ * remote end already closed — surfaces as a bare "fetch failed" TypeError, never a response).
+ * Only retries when no response was ever received, so it never double-submits against a request
+ * NOWPayments actually processed. HTTP error responses (4xx/5xx) are not retried.
+ */
+async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
+  try {
+    return await rawFetch<T>(path, init);
+  } catch (error) {
+    if (error instanceof NowPaymentsError) throw error;
+    return rawFetch<T>(path, init);
+  }
 }
 
 export interface NowPaymentsEstimate {
@@ -83,6 +98,11 @@ export async function createPayment(input: CreatePaymentInput): Promise<NowPayme
       order_id: input.orderId,
       order_description: input.orderDescription,
       ipn_callback_url: `${paymentsConfig.appBaseUrl}/api/webhooks/nowpayments`,
+      // Locks the exchange rate for the payment window so the requested pay_amount doesn't
+      // drift with the market. Deliberately NOT using is_fee_paid_by_user: combined with
+      // is_fixed_rate (which it requires), it added NOWPayments' fixed-rate volatility margin
+      // on top of their fee — ~8% overhead in production, not the ~1% fee alone.
+      is_fixed_rate: true,
     }),
   });
 }

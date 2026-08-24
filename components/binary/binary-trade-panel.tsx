@@ -52,6 +52,7 @@ export function BinaryTradePanel({
 
   const style = CONTRACT_STYLES.find((s) => s.key === contractStyle)!;
   const numericStake = Number(stake) || 0;
+  const insufficientBalance = numericStake > available;
   const potentialPayout = useMemo(() => Number((numericStake * (1 + PAYOUT_RATE)).toFixed(2)), [numericStake]);
 
   const effectiveDuration =
@@ -61,6 +62,10 @@ export function BinaryTradePanel({
     setError(null);
     if (numericStake <= 0) {
       setError("Enter a stake amount.");
+      return;
+    }
+    if (insufficientBalance) {
+      setError("Insufficient balance.");
       return;
     }
     setSubmitting(true);
@@ -177,18 +182,22 @@ export function BinaryTradePanel({
         </div>
         <div className="flex items-center justify-between">
           <span>Available balance</span>
-          <span className="font-mono text-foreground">${formatPrice(available)}</span>
+          <span className={cn("font-mono", insufficientBalance ? "text-danger" : "text-foreground")}>
+            ${formatPrice(available)}
+          </span>
         </div>
       </div>
 
-      {(error || (disabled && disabledReason)) && (
-        <p className="mt-3 rounded-md bg-danger/10 px-3 py-2 text-xs text-danger">{error ?? disabledReason}</p>
+      {(error || (disabled && disabledReason) || (!error && insufficientBalance && numericStake > 0)) && (
+        <p className="mt-3 rounded-md bg-danger/10 px-3 py-2 text-xs text-danger">
+          {error ?? disabledReason ?? "Insufficient balance for this stake."}
+        </p>
       )}
 
       <div className="mt-4 grid grid-cols-2 gap-2">
         <Button
           onClick={() => placeTrade("up")}
-          disabled={disabled || submitting}
+          disabled={disabled || submitting || insufficientBalance || numericStake <= 0}
           variant="success"
           size="lg"
           className="flex items-center justify-center gap-1.5"
@@ -197,7 +206,7 @@ export function BinaryTradePanel({
         </Button>
         <Button
           onClick={() => placeTrade("down")}
-          disabled={disabled || submitting}
+          disabled={disabled || submitting || insufficientBalance || numericStake <= 0}
           variant="danger"
           size="lg"
           className="flex items-center justify-center gap-1.5"

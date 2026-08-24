@@ -165,7 +165,7 @@ export function DepositPanel() {
           <label className="text-xs text-muted-foreground">Amount (USD)</label>
           <Input
             type="number"
-            min={10}
+            min={20}
             value={amountUsd}
             onChange={(e) => setAmountUsd(e.target.value)}
             className="mt-1"

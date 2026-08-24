@@ -9,7 +9,7 @@ import { createPayment, type NowPaymentsPayment } from "@/lib/payments/nowpaymen
 
 export class DepositError extends Error {}
 
-export const MIN_DEPOSIT_USD = 10;
+export const MIN_DEPOSIT_USD = 20;
 export const MAX_DEPOSIT_USD = 50_000;
 
 export async function createDeposit(userId: string, payCurrencyTicker: string, priceAmountUsd: number) {
