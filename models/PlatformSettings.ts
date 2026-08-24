@@ -12,6 +12,8 @@ const platformSettingsSchema = new Schema(
     makerFeePercent: { type: Number, default: 0.1 },
     takerFeePercent: { type: Number, default: 0.1 },
     rateLimitPerMinute: { type: Number, default: 1200 },
+    // Withdrawals at or below this USD amount auto-approve; above it, they require manual admin review.
+    withdrawalAutoApprovalThresholdUsd: { type: Number, default: 100 },
     smtpHost: { type: String, default: "" },
     smtpPort: { type: Number, default: 587 },
     websocketUrl: { type: String, default: "" },

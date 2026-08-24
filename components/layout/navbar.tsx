@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { FiMenu, FiX, FiTrendingUp, FiUser, FiLogOut, FiShield } from "react-icons/fi";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { NotificationBell } from "@/components/layout/notification-bell";
 import { useAuth } from "@/components/auth/auth-provider";
 import { isAdminRole } from "@/lib/auth/roles";
 
@@ -33,6 +34,7 @@ function AuthActions({ onNavigate }: { onNavigate?: () => void }) {
   if (user) {
     return (
       <div className="flex items-center gap-2">
+        <NotificationBell />
         <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
           <FiUser className="h-3.5 w-3.5" />
           {user.email}
