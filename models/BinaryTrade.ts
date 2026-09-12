@@ -23,6 +23,7 @@ const binaryTradeSchema = new Schema(
     status: { type: String, enum: STATUSES, default: "open", index: true },
     result: { type: String, enum: RESULTS, default: null },
     profitLoss: { type: Number, default: null },
+    adminResultOverride: { type: String, enum: RESULTS, default: null },
     priceSource: { type: String, default: "coingecko" },
     flagged: { type: Boolean, default: false },
     adminNote: { type: String, default: "" },

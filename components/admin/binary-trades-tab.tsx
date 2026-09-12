@@ -27,6 +27,7 @@ interface AdminTradeRow {
   status: "open" | "settled" | "cancelled";
   result: "win" | "lose" | "draw" | null;
   profitLoss: number | null;
+  adminResultOverride: "win" | "lose" | "draw" | null;
   flagged: boolean;
   adminNote: string;
   cancelReason: string;
@@ -67,6 +68,7 @@ function TradeDetailPanel({ tradeId, onClose, onChanged }: { tradeId: string; on
   const [auditLog, setAuditLog] = useState<AuditEntry[]>([]);
   const [reason, setReason] = useState("");
   const [note, setNote] = useState("");
+  const [manualResult, setManualResult] = useState<"win" | "lose" | "draw">("lose");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -81,8 +83,21 @@ function TradeDetailPanel({ tradeId, onClose, onChanged }: { tradeId: string; on
   }, [tradeId]);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    const controller = new AbortController();
+
+    const refresh = async () => {
+      const res = await fetch(`/api/admin/binary-trades/${tradeId}`, { signal: controller.signal });
+      const data = await res.json();
+      if (!controller.signal.aborted && res.ok) {
+        setDetail(data.trade);
+        setSnapshots(data.priceSnapshots ?? []);
+        setAuditLog(data.auditLog ?? []);
+      }
+    };
+
+    void refresh();
+    return () => controller.abort();
+  }, [tradeId]);
 
   const runAction = async (action: string, extra: Record<string, unknown> = {}) => {
     setBusy(true);
@@ -123,6 +138,9 @@ function TradeDetailPanel({ tradeId, onClose, onChanged }: { tradeId: string; on
               <Badge variant={RESULT_VARIANT[detail.result ?? "draw"]} className="capitalize">{detail.result}</Badge>
             ) : (
               <StatusBadge status={detail.status} />
+            )}
+            {detail.adminResultOverride && detail.status === "open" && (
+              <Badge variant={RESULT_VARIANT[detail.adminResultOverride]} className="capitalize">Override: {detail.adminResultOverride}</Badge>
             )}
             {detail.flagged && <Badge variant="danger">Flagged</Badge>}
           </div>
@@ -199,6 +217,17 @@ function TradeDetailPanel({ tradeId, onClose, onChanged }: { tradeId: string; on
           <Button size="sm" variant="outline" disabled={busy || !note} onClick={() => runAction("note")}>
             Add Note
           </Button>
+          <div className="flex items-center gap-2 rounded-md border border-border bg-muted/30 px-2 py-1.5">
+            <label className="text-[11px] uppercase tracking-wide text-muted-foreground">Manual result</label>
+            <Select value={manualResult} onChange={(e) => setManualResult(e.target.value as "win" | "lose" | "draw")} className="max-w-[110px] text-xs">
+              <option value="lose">Lose</option>
+              <option value="win">Win</option>
+              <option value="draw">Draw</option>
+            </Select>
+            <Button size="sm" variant="outline" disabled={busy || detail.status !== "open"} onClick={() => runAction("manual_settle", { result: manualResult })}>
+              Apply at Timeout
+            </Button>
+          </div>
           <Button
             size="sm"
             variant="outline"
@@ -285,10 +314,18 @@ export function BinaryTradesTab() {
   }, [buildParams]);
 
   useEffect(() => {
-    load();
-    const id = setInterval(load, 5000);
+    const refresh = async () => {
+      const res = await fetch(`/api/admin/binary-trades?${buildParams().toString()}`);
+      const data = await res.json();
+      if (!res.ok) return;
+      if (Array.isArray(data.trades)) setTrades(data.trades);
+      if (data.counts) setCounts(data.counts);
+    };
+
+    void refresh();
+    const id = setInterval(() => { void refresh(); }, 5000);
     return () => clearInterval(id);
-  }, [load]);
+  }, [buildParams]);
 
   const exportUrl = `/api/admin/binary-trades?${buildParams().toString()}&format=csv`;
 

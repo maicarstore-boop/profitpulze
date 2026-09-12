@@ -132,11 +132,25 @@ async function settleTradeById(tradeId: string, exitPrice: number, now: Date) {
   const trade = await BinaryTradeModel.findById(tradeId).lean();
   if (!trade || trade.status !== "open") return null;
 
-  const { result, profitLoss } = computeSettlement(trade.direction, trade.entryPrice, exitPrice, trade.stake, trade.payoutRate);
+  let result: TradeResult;
+  let profitLoss: number;
+
+  if (trade.adminResultOverride) {
+    result = trade.adminResultOverride;
+    if (result === "win") {
+      profitLoss = Number((trade.stake * trade.payoutRate).toFixed(2));
+    } else if (result === "draw") {
+      profitLoss = 0;
+    } else {
+      profitLoss = -trade.stake;
+    }
+  } else {
+    ({ result, profitLoss } = computeSettlement(trade.direction, trade.entryPrice, exitPrice, trade.stake, trade.payoutRate));
+  }
 
   const updated = await BinaryTradeModel.findOneAndUpdate(
     { _id: tradeId, status: "open" },
-    { $set: { status: "settled", exitPrice, result, profitLoss } },
+    { $set: { status: "settled", exitPrice, result, profitLoss, adminResultOverride: trade.adminResultOverride ?? null } },
     { new: true }
   );
 
@@ -192,6 +206,26 @@ export async function settleDueTrades(): Promise<number> {
     if (settled) settledCount++;
   }
   return settledCount;
+}
+
+/** Admin-only: stores a pending trade outcome override. The override is applied when the trade expires and settlement runs. */
+export async function manualSettleTrade(tradeId: string, result: TradeResult = "lose") {
+  await connectToDatabase();
+
+  const normalizedResult: TradeResult = result === "win" || result === "lose" || result === "draw" ? result : "lose";
+  const trade = await BinaryTradeModel.findById(tradeId).lean();
+  if (!trade || trade.status !== "open") {
+    throw new TradeError("Only open (unsettled) trades can receive an admin result override.");
+  }
+
+  const updated = await BinaryTradeModel.findOneAndUpdate(
+    { _id: tradeId, status: "open" },
+    { $set: { adminResultOverride: normalizedResult } },
+    { new: true }
+  );
+  if (!updated) throw new TradeError("Only open (unsettled) trades can receive an admin result override.");
+
+  return updated;
 }
 
 /** Admin-only: refunds the stake and cancels a trade. Only ever possible while status is "open". */
