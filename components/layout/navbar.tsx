@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FiMenu, FiX, FiTrendingUp, FiUser, FiLogOut, FiShield } from "react-icons/fi";
+import { FiMenu, FiX, FiTrendingUp, FiUser, FiLogOut, FiShield, FiSettings } from "react-icons/fi";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { NotificationBell } from "@/components/layout/notification-bell";
@@ -39,6 +39,11 @@ function AuthActions({ onNavigate }: { onNavigate?: () => void }) {
           <FiUser className="h-3.5 w-3.5" />
           {user.email}
         </span>
+        <Link href="/settings" onClick={onNavigate}>
+          <Button variant="ghost" size="sm">
+            <FiSettings className="h-3.5 w-3.5" /> Settings
+          </Button>
+        </Link>
         {isAdminRole(user.role) && (
           <Link href="/admin" onClick={onNavigate}>
             <Button variant="outline" size="sm">

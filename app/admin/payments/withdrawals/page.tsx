@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { FiClock, FiCheckCircle } from "react-icons/fi";
+import { FiClock, FiCheckCircle, FiSend, FiCopy, FiCheck } from "react-icons/fi";
 import { Card } from "@/components/ui/card";
 import { Select } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
@@ -10,7 +10,7 @@ import { StatusBadge } from "@/components/admin/status-badge";
 import { StatCard } from "@/components/admin/stat-card";
 import { formatPrice } from "@/lib/market-data";
 
-const STATUSES = ["pending", "approved", "rejected", "processing", "completed", "failed"];
+const STATUSES = ["pending", "approved", "rejected", "completed", "failed"];
 
 interface WithdrawalRow {
   id: string;
@@ -31,6 +31,7 @@ export default function AdminWithdrawalsPage() {
   const [status, setStatus] = useState("");
   const [user, setUser] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const params = new URLSearchParams({ limit: "150" });
@@ -48,8 +49,13 @@ export default function AdminWithdrawalsPage() {
     return () => clearInterval(id);
   }, [load]);
 
-  const handleAction = async (id: string, action: "approve" | "reject") => {
-    const reason = action === "reject" ? window.prompt("Reason for rejection (optional):") ?? "" : undefined;
+  const handleAction = async (id: string, action: "approve" | "reject" | "complete" | "fail") => {
+    const reason =
+      action === "reject"
+        ? window.prompt("Reason for rejection (optional):") ?? ""
+        : action === "fail"
+          ? window.prompt("Why couldn't this be sent? (optional):") ?? ""
+          : undefined;
     setBusyId(id);
     try {
       await fetch(`/api/admin/payments/withdrawals/${id}`, {
@@ -63,22 +69,37 @@ export default function AdminWithdrawalsPage() {
     }
   };
 
+  const handleCopyAddress = async (id: string, address: string) => {
+    await navigator.clipboard.writeText(address);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 1500);
+  };
+
   const pending = totals.pending ?? { total: 0, count: 0 };
+  const awaitingSend = totals.approved ?? { total: 0, count: 0 };
   const completed = totals.completed ?? { total: 0, count: 0 };
 
   return (
     <div className="space-y-4">
       <div>
         <h1 className="text-2xl font-bold">Withdrawals</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Withdrawal requests — approve or reject manual-review items.</p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Approve a request, send the crypto yourself from your own wallet, then confirm it here.
+        </p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid gap-4 sm:grid-cols-3">
         <StatCard
           label="Pending Review"
           value={`$${formatPrice(pending.total)}`}
           icon={FiClock}
           sublabel={`${pending.count} awaiting approval`}
+        />
+        <StatCard
+          label="Approved — Awaiting Send"
+          value={`$${formatPrice(awaitingSend.total)}`}
+          icon={FiSend}
+          sublabel={`${awaitingSend.count} to send manually`}
         />
         <StatCard
           label="Total Completed"
@@ -117,7 +138,19 @@ export default function AdminWithdrawalsPage() {
               <tr key={w.id} className="border-b border-border last:border-0 hover:bg-accent">
                 <td className="px-4 py-3 text-muted-foreground">{w.userEmail}</td>
                 <td className="px-4 py-3 font-mono text-xs">
-                  {w.address.slice(0, 10)}…{w.address.slice(-6)}
+                  <div className="flex items-center gap-1.5">
+                    <span>
+                      {w.address.slice(0, 10)}…{w.address.slice(-6)}
+                    </span>
+                    <button
+                      type="button"
+                      title="Copy full address"
+                      onClick={() => handleCopyAddress(w.id, w.address)}
+                      className="text-muted-foreground hover:text-foreground"
+                    >
+                      {copiedId === w.id ? <FiCheck className="h-3 w-3 text-success" /> : <FiCopy className="h-3 w-3" />}
+                    </button>
+                  </div>
                   <div className="text-muted-foreground">
                     {w.currency.toUpperCase()} ({w.network})
                   </div>
@@ -125,7 +158,6 @@ export default function AdminWithdrawalsPage() {
                 <td className="px-4 py-3 font-mono text-xs">${formatPrice(w.amountUsd)}</td>
                 <td className="px-4 py-3">
                   <StatusBadge status={w.status} />
-                  {w.autoApproved && <span className="ml-1.5 text-[10px] text-muted-foreground">(auto)</span>}
                 </td>
                 <td className="px-4 py-3 text-xs text-muted-foreground">{new Date(w.createdAt).toLocaleString()}</td>
                 <td className="px-4 py-3 text-right">
@@ -141,6 +173,21 @@ export default function AdminWithdrawalsPage() {
                         onClick={() => handleAction(w.id, "reject")}
                       >
                         Reject
+                      </Button>
+                    </div>
+                  )}
+                  {w.status === "approved" && (
+                    <div className="flex justify-end gap-2">
+                      <Button size="sm" disabled={busyId === w.id} onClick={() => handleAction(w.id, "complete")}>
+                        Confirm Sent
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={busyId === w.id}
+                        onClick={() => handleAction(w.id, "fail")}
+                      >
+                        Mark Failed
                       </Button>
                     </div>
                   )}

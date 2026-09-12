@@ -10,7 +10,9 @@ export async function GET() {
   }
 
   await connectToDatabase();
-  const user = await UserModel.findById(session.userId).select("twoFactorEnabled").lean();
+  const user = await UserModel.findById(session.userId)
+    .select("twoFactorEnabled +transactionPasswordHash")
+    .lean();
 
   return NextResponse.json({
     user: {
@@ -18,6 +20,7 @@ export async function GET() {
       email: session.email,
       role: session.role,
       twoFactorEnabled: user?.twoFactorEnabled ?? false,
+      hasTransactionPassword: Boolean(user?.transactionPasswordHash),
     },
   });
 }

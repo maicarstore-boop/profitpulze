@@ -2,7 +2,6 @@ import "server-only";
 import { connectToDatabase } from "@/lib/db";
 import { WithdrawalModel, type WithdrawalHydrated } from "@/models/Withdrawal";
 import { UserModel } from "@/models/User";
-import { PlatformSettingsModel, SETTINGS_SINGLETON_KEY } from "@/models/PlatformSettings";
 import {
   lockFunds,
   releaseLockedFunds,
@@ -12,10 +11,10 @@ import {
   InsufficientFundsError,
 } from "@/lib/wallet";
 import { createNotification } from "@/lib/notifications";
-import { verifyTotpToken } from "@/lib/auth/totp";
+import { verifyPassword } from "@/lib/auth/password";
 import { findSupportedCurrency } from "@/lib/payments/supported-currencies";
 import { isValidAddress } from "@/lib/payments/address-validation";
-import { getEstimatedPrice, createPayout } from "@/lib/payments/nowpayments-client";
+import { getEstimatedPrice } from "@/lib/payments/nowpayments-client";
 import { recordAuditLog } from "@/lib/audit";
 
 export class WithdrawalError extends Error {}
@@ -24,19 +23,12 @@ export { InsufficientFundsError };
 export const MIN_WITHDRAWAL_USD = 20;
 export const MAX_WITHDRAWAL_USD = 25_000;
 
-async function getAutoApprovalThreshold(): Promise<number> {
-  const settings = await PlatformSettingsModel.findOne({ key: SETTINGS_SINGLETON_KEY })
-    .select("withdrawalAutoApprovalThresholdUsd")
-    .lean();
-  return settings?.withdrawalAutoApprovalThresholdUsd ?? 100;
-}
-
 export interface RequestWithdrawalInput {
   userId: string;
   currencyTicker: string;
   address: string;
   amountUsd: number;
-  totpCode: string;
+  transactionPassword: string;
 }
 
 export async function requestWithdrawal(input: RequestWithdrawalInput) {
@@ -53,13 +45,13 @@ export async function requestWithdrawal(input: RequestWithdrawalInput) {
     throw new WithdrawalError(`That doesn't look like a valid ${currency.symbol} (${currency.network}) address.`);
   }
 
-  const user = await UserModel.findById(input.userId).select("+twoFactorSecret").lean();
+  const user = await UserModel.findById(input.userId).select("+transactionPasswordHash").lean();
   if (!user) throw new WithdrawalError("User not found.");
-  if (!user.twoFactorEnabled || !user.twoFactorSecret) {
-    throw new WithdrawalError("Enable two-factor authentication before requesting a withdrawal.");
+  if (!user.transactionPasswordHash) {
+    throw new WithdrawalError("Set up a transaction password before requesting a withdrawal.");
   }
-  if (!(await verifyTotpToken(input.totpCode, user.twoFactorSecret))) {
-    throw new WithdrawalError("Invalid authentication code.");
+  if (!(await verifyPassword(user.transactionPasswordHash, input.transactionPassword))) {
+    throw new WithdrawalError("Invalid transaction password.");
   }
 
   let estimatedCryptoAmount: number | null = null;
@@ -77,9 +69,6 @@ export async function requestWithdrawal(input: RequestWithdrawalInput) {
     throw error;
   }
 
-  const threshold = await getAutoApprovalThreshold();
-  const autoApprove = input.amountUsd <= threshold;
-
   const withdrawal = await WithdrawalModel.create({
     userId: input.userId,
     currency: currency.ticker,
@@ -87,49 +76,19 @@ export async function requestWithdrawal(input: RequestWithdrawalInput) {
     address: input.address,
     amountUsd: input.amountUsd,
     estimatedCryptoAmount,
-    status: autoApprove ? "approved" : "pending",
-    autoApproved: autoApprove,
+    status: "pending",
   });
 
   await createNotification({
     userId: input.userId,
     type: "withdrawal_submitted",
     title: "Withdrawal requested",
-    message: autoApprove
-      ? `Your withdrawal of $${input.amountUsd.toFixed(2)} was auto-approved and is being processed.`
-      : `Your withdrawal of $${input.amountUsd.toFixed(2)} is pending manual review.`,
+    message: `Your withdrawal of $${input.amountUsd.toFixed(2)} is pending review. You'll be notified once it's approved and sent.`,
     relatedType: "Withdrawal",
     relatedId: withdrawal._id.toString(),
   });
 
-  if (autoApprove) {
-    await triggerPayout(withdrawal._id.toString());
-  }
-
   return withdrawal;
-}
-
-/** Calls out to NOWPayments to actually send funds. Only valid for withdrawals already in "approved" status. */
-export async function triggerPayout(withdrawalId: string) {
-  await connectToDatabase();
-  const withdrawal = await WithdrawalModel.findById(withdrawalId);
-  if (!withdrawal || withdrawal.status !== "approved") return;
-
-  try {
-    const estimate = await getEstimatedPrice(withdrawal.amountUsd, withdrawal.currency);
-    const batch = await createPayout({
-      address: withdrawal.address,
-      currency: withdrawal.currency,
-      amount: estimate.estimated_amount,
-      withdrawalId: withdrawal._id.toString(),
-    });
-    withdrawal.estimatedCryptoAmount = estimate.estimated_amount;
-    withdrawal.nowPaymentsPayoutId = batch.id;
-    withdrawal.status = "processing";
-    await withdrawal.save();
-  } catch (error) {
-    await failWithdrawal(withdrawal, error instanceof Error ? error.message : "Payout provider error.");
-  }
 }
 
 async function failWithdrawal(withdrawal: WithdrawalHydrated, reason: string) {
@@ -169,7 +128,15 @@ export async function approveWithdrawal(withdrawalId: string, admin: { userId: s
     request,
   });
 
-  await triggerPayout(withdrawalId);
+  await createNotification({
+    userId: withdrawal.userId,
+    type: "withdrawal_approved",
+    title: "Withdrawal approved",
+    message: `Your withdrawal of $${withdrawal.amountUsd.toFixed(2)} was approved and will be sent shortly.`,
+    relatedType: "Withdrawal",
+    relatedId: withdrawal._id.toString(),
+  });
+
   return withdrawal;
 }
 
@@ -214,60 +181,93 @@ export async function rejectWithdrawal(
   return withdrawal;
 }
 
-export interface NowPaymentsPayoutIpnPayload {
-  id?: string | number;
-  batch_withdrawal_id?: string | number;
-  status: string;
-  [key: string]: unknown;
+/**
+ * Admin confirms they've personally sent the crypto payment from their own wallet.
+ * Only valid for "approved" withdrawals — permanently settles the locked funds
+ * (they've genuinely left the platform) and finalizes the record.
+ */
+export async function completeWithdrawal(
+  withdrawalId: string,
+  admin: { userId: string; email: string },
+  request: Request
+) {
+  await connectToDatabase();
+  const withdrawal = await WithdrawalModel.findById(withdrawalId);
+  if (!withdrawal || withdrawal.status !== "approved") {
+    throw new WithdrawalError("Only approved withdrawals can be marked as completed.");
+  }
+
+  await settleLockedFunds(withdrawal.userId, withdrawal.amountUsd);
+  const balance = await getOrCreateBalance(withdrawal.userId);
+  await recordTransaction({
+    userId: withdrawal.userId,
+    type: "withdrawal",
+    amount: -withdrawal.amountUsd,
+    balanceAfter: balance.available,
+    referenceType: "Withdrawal",
+    referenceId: withdrawal._id.toString(),
+    note: `Withdrawal of ${withdrawal.currency.toUpperCase()} sent manually by admin (${admin.email})`,
+  });
+
+  withdrawal.status = "completed";
+  withdrawal.processedAt = new Date();
+  await withdrawal.save();
+
+  await recordAuditLog({
+    adminId: admin.userId,
+    adminEmail: admin.email,
+    action: "withdrawal.complete",
+    targetType: "Withdrawal",
+    targetId: withdrawalId,
+    previousValue: { status: "approved" },
+    newValue: { status: "completed" },
+    request,
+  });
+
+  await createNotification({
+    userId: withdrawal.userId,
+    type: "withdrawal_completed",
+    title: "Withdrawal completed",
+    message: `Your withdrawal of $${withdrawal.amountUsd.toFixed(2)} has been sent.`,
+    relatedType: "Withdrawal",
+    relatedId: withdrawal._id.toString(),
+  });
+
+  return withdrawal;
 }
 
-/** Idempotent: only mutates balance/status on a genuine transition into a terminal state. */
-export async function handlePayoutIpn(payload: NowPaymentsPayoutIpnPayload) {
+/**
+ * Admin marks an already-approved withdrawal as failed — e.g. the manual send couldn't
+ * go through — releasing the locked funds back to the user's available balance instead
+ * of leaving them stuck in limbo.
+ */
+export async function failApprovedWithdrawal(
+  withdrawalId: string,
+  admin: { userId: string; email: string },
+  reason: string,
+  request: Request
+) {
   await connectToDatabase();
-
-  const batchId = payload.batch_withdrawal_id ?? payload.id;
-  const withdrawal = await WithdrawalModel.findOne({ nowPaymentsPayoutId: String(batchId) });
-  if (!withdrawal) {
-    return { handled: false as const, reason: "unknown_withdrawal" };
+  const withdrawal = await WithdrawalModel.findById(withdrawalId);
+  if (!withdrawal || withdrawal.status !== "approved") {
+    throw new WithdrawalError("Only approved withdrawals can be marked as failed.");
   }
 
-  if (withdrawal.status === "completed" || withdrawal.status === "failed") {
-    return { handled: true as const, withdrawal }; // already terminal — no-op
-  }
+  await failWithdrawal(withdrawal, reason || "Marked as failed by admin.");
 
-  const status = payload.status;
-  if (status === "finished") {
-    await settleLockedFunds(withdrawal.userId, withdrawal.amountUsd);
-    const balance = await getOrCreateBalance(withdrawal.userId);
-    await recordTransaction({
-      userId: withdrawal.userId,
-      type: "withdrawal",
-      amount: -withdrawal.amountUsd,
-      balanceAfter: balance.available,
-      referenceType: "Withdrawal",
-      referenceId: withdrawal._id.toString(),
-      note: `Withdrawal of ${withdrawal.currency.toUpperCase()} completed via NOWPayments`,
-    });
-    withdrawal.status = "completed";
-    withdrawal.processedAt = new Date();
-    await withdrawal.save();
+  await recordAuditLog({
+    adminId: admin.userId,
+    adminEmail: admin.email,
+    action: "withdrawal.fail",
+    targetType: "Withdrawal",
+    targetId: withdrawalId,
+    previousValue: { status: "approved" },
+    newValue: { status: "failed" },
+    reason,
+    request,
+  });
 
-    await createNotification({
-      userId: withdrawal.userId,
-      type: "withdrawal_completed",
-      title: "Withdrawal completed",
-      message: `Your withdrawal of $${withdrawal.amountUsd.toFixed(2)} has been sent.`,
-      relatedType: "Withdrawal",
-      relatedId: withdrawal._id.toString(),
-    });
-  } else if (status === "failed" || status === "rejected") {
-    await failWithdrawal(withdrawal, `Payment provider reported status: ${status}`);
-  } else {
-    withdrawal.status = "processing";
-    await withdrawal.save();
-  }
-
-  return { handled: true as const, withdrawal };
+  return withdrawal;
 }
 
 export async function getUserWithdrawals(userId: string, opts: { status?: string; limit?: number } = {}) {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCoins } from "@/hooks/use-coins";
 import { formatCompact } from "@/lib/market-data";
@@ -49,13 +49,15 @@ interface WalletBalance {
 function useWalletBalance() {
   const [wallet, setWallet] = useState<WalletBalance | null>(null);
 
-  useEffect(() => {
+  const refresh = useCallback(() => {
     fetch("/api/wallet")
       .then((res) => res.json())
       .then((data) => setWallet({ available: data.available, locked: data.locked, total: data.total }));
   }, []);
 
-  return wallet;
+  useEffect(refresh, [refresh]);
+
+  return { wallet, refresh };
 }
 
 interface UserHolding {
@@ -202,7 +204,7 @@ export function WalletView() {
     ? requestedTab!
     : undefined;
 
-  const wallet = useWalletBalance();
+  const { wallet, refresh: refreshWallet } = useWalletBalance();
   const holdings = useUserHoldings();
   const liveCoins = useCoins(100);
   const holdingsValue = liveCoins.reduce((sum, coin) => {
@@ -233,7 +235,7 @@ export function WalletView() {
               />
             ),
           },
-          { key: "deposit", label: "Deposit", content: <DepositPanel /> },
+          { key: "deposit", label: "Deposit", content: <DepositPanel onFinished={refreshWallet} /> },
           { key: "withdraw", label: "Withdraw", content: <WithdrawPanel /> },
           { key: "history", label: "History", content: <HistoryTable /> },
         ]}

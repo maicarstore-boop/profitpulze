@@ -3,10 +3,11 @@ import { connectToDatabase } from "@/lib/db";
 import { WebhookEventModel } from "@/models/WebhookEvent";
 import { verifyIpnSignature } from "@/lib/payments/nowpayments-client";
 import { handleDepositIpn, type NowPaymentsIpnPayload } from "@/lib/payments/deposits";
-import { handlePayoutIpn, type NowPaymentsPayoutIpnPayload } from "@/lib/payments/withdrawals";
 
 /**
- * Single IPN endpoint for both payment (deposit) and payout (withdrawal) callbacks.
+ * IPN endpoint for NOWPayments deposit (payment) callbacks. Withdrawals are sent
+ * manually by an admin and confirmed in the admin panel, not via NOWPayments payouts,
+ * so there's no payout-IPN branch here.
  * Never trusts the payload without a verified signature, and never trusts a client-side
  * confirmation for anything — this is the only place wallet balances move for real funds.
  */
@@ -28,13 +29,10 @@ export async function POST(request: Request) {
   }
 
   const isPaymentEvent = typeof payload.payment_id !== "undefined" && typeof payload.payment_status === "string";
-  const isPayoutEvent = !isPaymentEvent && typeof payload.status === "string";
 
   const dedupeKey = isPaymentEvent
     ? `payment:${payload.payment_id}:${payload.payment_status}`
-    : isPayoutEvent
-      ? `payout:${payload.batch_withdrawal_id ?? payload.id}:${payload.status}`
-      : `unknown:${Date.now()}:${Math.random()}`;
+    : `unknown:${Date.now()}:${Math.random()}`;
 
   await connectToDatabase();
 
@@ -56,8 +54,6 @@ export async function POST(request: Request) {
   try {
     if (isPaymentEvent) {
       await handleDepositIpn(payload as unknown as NowPaymentsIpnPayload);
-    } else if (isPayoutEvent) {
-      await handlePayoutIpn(payload as unknown as NowPaymentsPayoutIpnPayload);
     } else {
       throw new Error("Unrecognized NOWPayments webhook payload shape.");
     }

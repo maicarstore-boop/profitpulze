@@ -17,10 +17,4 @@ export const paymentsConfig = {
   get ipnSecret() {
     return requireEnv("NOWPAYMENT_IPN_SECRET_KEY");
   },
-  get payoutEmail() {
-    return requireEnv("NOWPAYMENTS_EMAIL");
-  },
-  get payoutPassword() {
-    return requireEnv("NOWPAYMENTS_PASSWORD");
-  },
 };

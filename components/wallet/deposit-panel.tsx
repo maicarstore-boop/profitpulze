@@ -22,7 +22,7 @@ interface DepositResult {
   qrCode?: string;
 }
 
-export function DepositPanel() {
+export function DepositPanel({ onFinished }: { onFinished?: () => void } = {}) {
   const [currencies, setCurrencies] = useState<SupportedCurrency[]>([]);
   const [ticker, setTicker] = useState("");
   const [amountUsd, setAmountUsd] = useState("100");
@@ -49,18 +49,24 @@ export function DepositPanel() {
     };
   }, []);
 
-  const pollStatus = useCallback((depositId: string) => {
-    if (pollRef.current) clearInterval(pollRef.current);
-    pollRef.current = setInterval(async () => {
-      const res = await fetch(`/api/deposits/${depositId}`);
-      if (!res.ok) return;
-      const data = await res.json();
-      setDeposit((prev) => (prev ? { ...prev, status: data.deposit.status } : prev));
-      if (TERMINAL_STATUSES.has(data.deposit.status) && pollRef.current) {
-        clearInterval(pollRef.current);
-      }
-    }, 5000);
-  }, []);
+  const pollStatus = useCallback(
+    (depositId: string) => {
+      if (pollRef.current) clearInterval(pollRef.current);
+      pollRef.current = setInterval(async () => {
+        const res = await fetch(`/api/deposits/${depositId}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        setDeposit((prev) => (prev ? { ...prev, status: data.deposit.status } : prev));
+        if (data.deposit.status === "finished") {
+          onFinished?.();
+        }
+        if (TERMINAL_STATUSES.has(data.deposit.status) && pollRef.current) {
+          clearInterval(pollRef.current);
+        }
+      }, 5000);
+    },
+    [onFinished]
+  );
 
   const handleGenerate = async () => {
     setError(null);

@@ -45,6 +45,11 @@ const userSchema = new Schema(
       default: null,
       select: false,
     },
+    transactionPasswordHash: {
+      type: String,
+      default: null,
+      select: false,
+    },
     tradingSuspended: {
       type: Boolean,
       default: false,

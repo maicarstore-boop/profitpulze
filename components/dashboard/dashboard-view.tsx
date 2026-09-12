@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FiArrowUp, FiArrowDown, FiPlus, FiSend, FiX } from "react-icons/fi";
@@ -41,20 +41,24 @@ export function DashboardView() {
   const [holdings, setHoldings] = useState<{ symbol: string; quantity: number }[]>([]);
   const [recentActivity, setRecentActivity] = useState<RecentTransaction[]>([]);
 
-  useEffect(() => {
+  const refreshWallet = useCallback(() => {
     fetch("/api/wallet")
       .then((res) => res.json())
       .then((data) => setCashBalance(data.total ?? 0))
-      .catch(() => {});
-    fetch("/api/holdings")
-      .then((res) => res.json())
-      .then((data) => setHoldings(Array.isArray(data.holdings) ? data.holdings : []))
       .catch(() => {});
     fetch("/api/wallet/transactions?limit=6")
       .then((res) => res.json())
       .then((data) => setRecentActivity(Array.isArray(data.transactions) ? data.transactions : []))
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    refreshWallet();
+    fetch("/api/holdings")
+      .then((res) => res.json())
+      .then((data) => setHoldings(Array.isArray(data.holdings) ? data.holdings : []))
+      .catch(() => {});
+  }, [refreshWallet]);
 
   const rows = holdings
     .map((h) => {
@@ -114,7 +118,7 @@ export function DashboardView() {
               <FiX className="h-3.5 w-3.5" /> Close
             </Button>
           </div>
-          <DepositPanel />
+          <DepositPanel onFinished={refreshWallet} />
         </div>
       )}
 

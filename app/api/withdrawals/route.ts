@@ -9,7 +9,7 @@ const createSchema = z.object({
   currency: z.string().min(1),
   address: z.string().min(1),
   amountUsd: z.number().positive(),
-  totpCode: z.string().min(6).max(6),
+  transactionPassword: z.string().min(6).max(64),
 });
 
 export async function GET(request: NextRequest) {
@@ -43,7 +43,7 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => null);
   const parsed = createSchema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json({ error: "A currency, address, amount, and 2FA code are required." }, { status: 400 });
+    return NextResponse.json({ error: "A currency, address, amount, and transaction password are required." }, { status: 400 });
   }
 
   try {
@@ -52,7 +52,7 @@ export async function POST(request: Request) {
       currencyTicker: parsed.data.currency,
       address: parsed.data.address,
       amountUsd: parsed.data.amountUsd,
-      totpCode: parsed.data.totpCode,
+      transactionPassword: parsed.data.transactionPassword,
     });
     return NextResponse.json(
       {
