@@ -115,6 +115,44 @@ export async function handleDepositIpn(payload: NowPaymentsIpnPayload) {
   return { handled: true as const, deposit };
 }
 
+export async function confirmDepositManually(depositId: string) {
+  await connectToDatabase();
+
+  const deposit = await DepositModel.findById(depositId);
+  if (!deposit) {
+    throw new DepositError("Deposit not found.");
+  }
+  if (deposit.creditedAt || deposit.status === "finished") {
+    return deposit;
+  }
+
+  const balance = await adjustBalance(deposit.userId, deposit.priceAmountUsd);
+  await recordTransaction({
+    userId: deposit.userId,
+    type: "deposit",
+    amount: deposit.priceAmountUsd,
+    balanceAfter: balance.available,
+    referenceType: "Deposit",
+    referenceId: deposit._id.toString(),
+    note: "Deposit manually confirmed by admin",
+  });
+
+  deposit.status = "finished";
+  deposit.creditedAt = new Date();
+  await deposit.save();
+
+  await createNotification({
+    userId: deposit.userId,
+    type: "deposit_confirmed",
+    title: "Deposit confirmed",
+    message: `An administrator manually confirmed your $${deposit.priceAmountUsd.toFixed(2)} deposit.`,
+    relatedType: "Deposit",
+    relatedId: deposit._id.toString(),
+  });
+
+  return deposit;
+}
+
 export async function getUserDeposits(userId: string, opts: { status?: string; limit?: number } = {}) {
   await connectToDatabase();
   const filter: Record<string, unknown> = { userId };

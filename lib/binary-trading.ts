@@ -132,25 +132,11 @@ async function settleTradeById(tradeId: string, exitPrice: number, now: Date) {
   const trade = await BinaryTradeModel.findById(tradeId).lean();
   if (!trade || trade.status !== "open") return null;
 
-  let result: TradeResult;
-  let profitLoss: number;
-
-  if (trade.adminResultOverride) {
-    result = trade.adminResultOverride;
-    if (result === "win") {
-      profitLoss = Number((trade.stake * trade.payoutRate).toFixed(2));
-    } else if (result === "draw") {
-      profitLoss = 0;
-    } else {
-      profitLoss = -trade.stake;
-    }
-  } else {
-    ({ result, profitLoss } = computeSettlement(trade.direction, trade.entryPrice, exitPrice, trade.stake, trade.payoutRate));
-  }
+  const { result, profitLoss } = computeSettlement(trade.direction, trade.entryPrice, exitPrice, trade.stake, trade.payoutRate);
 
   const updated = await BinaryTradeModel.findOneAndUpdate(
     { _id: tradeId, status: "open" },
-    { $set: { status: "settled", exitPrice, result, profitLoss, adminResultOverride: trade.adminResultOverride ?? null } },
+    { $set: { status: "settled", exitPrice, result, profitLoss } },
     { new: true }
   );
 
@@ -208,22 +194,57 @@ export async function settleDueTrades(): Promise<number> {
   return settledCount;
 }
 
-/** Admin-only: stores a pending trade outcome override. The override is applied when the trade expires and settlement runs. */
-export async function manualSettleTrade(tradeId: string, result: TradeResult = "lose") {
+/** Admin-only: immediately forces a trade result. Defaults to a losing settlement when no explicit result is supplied. */
+export async function manualSettleTrade(tradeId: string, result: TradeResult = "lose", reason?: string) {
   await connectToDatabase();
 
-  const normalizedResult: TradeResult = result === "win" || result === "lose" || result === "draw" ? result : "lose";
+  const normalizedResult: TradeResult = result === "win" ? "win" : "lose";
   const trade = await BinaryTradeModel.findById(tradeId).lean();
   if (!trade || trade.status !== "open") {
-    throw new TradeError("Only open (unsettled) trades can receive an admin result override.");
+    throw new TradeError("Only open (unsettled) trades can be manually settled.");
+  }
+
+  const now = new Date();
+  const exitPrice = trade.entryPrice;
+  let profitLoss: number;
+  let creditAmount = 0;
+
+  if (normalizedResult === "win") {
+    profitLoss = Number((trade.stake * trade.payoutRate).toFixed(2));
+    creditAmount = trade.stake + profitLoss;
+  } else {
+    profitLoss = -trade.stake;
+    creditAmount = 0;
   }
 
   const updated = await BinaryTradeModel.findOneAndUpdate(
     { _id: tradeId, status: "open" },
-    { $set: { adminResultOverride: normalizedResult } },
+    { $set: { status: "settled", exitPrice, result: normalizedResult, profitLoss } },
     { new: true }
   );
-  if (!updated) throw new TradeError("Only open (unsettled) trades can receive an admin result override.");
+  if (!updated) throw new TradeError("Only open (unsettled) trades can be manually settled.");
+
+  await MarketPriceSnapshotModel.create({
+    symbol: updated.symbol,
+    price: exitPrice,
+    source: "admin_override",
+    context: "exit",
+    tradeId,
+    recordedAt: now,
+  });
+
+  if (creditAmount > 0) {
+    const balance = await adjustBalance(updated.userId, creditAmount);
+    await recordTransaction({
+      userId: updated.userId,
+      type: "trade_payout",
+      amount: creditAmount,
+      balanceAfter: balance.available,
+      referenceType: "BinaryTrade",
+      referenceId: tradeId,
+      note: `Admin manually settled ${updated.symbol} trade as ${normalizedResult}${reason ? ` (${reason})` : ""}`,
+    });
+  }
 
   return updated;
 }

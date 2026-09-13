@@ -5,6 +5,7 @@ import { FiDollarSign, FiCheckCircle } from "react-icons/fi";
 import { Card } from "@/components/ui/card";
 import { Select } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/admin/status-badge";
 import { StatCard } from "@/components/admin/stat-card";
 import { formatPrice } from "@/lib/market-data";
@@ -28,6 +29,7 @@ export default function AdminDepositsPage() {
   const [totals, setTotals] = useState<Record<string, { total: number; count: number }>>({});
   const [status, setStatus] = useState("");
   const [user, setUser] = useState("");
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const params = new URLSearchParams({ limit: "150" });
@@ -40,16 +42,46 @@ export default function AdminDepositsPage() {
   }, [status, user]);
 
   useEffect(() => {
-    load();
-    const id = setInterval(load, 8000);
+    const refresh = async () => {
+      const params = new URLSearchParams({ limit: "150" });
+      if (status) params.set("status", status);
+      if (user) params.set("user", user);
+      const res = await fetch(`/api/admin/payments/deposits?${params.toString()}`);
+      const data = await res.json();
+      if (!res.ok) return;
+      if (Array.isArray(data.deposits)) setDeposits(data.deposits);
+      if (data.totals) setTotals(data.totals);
+    };
+
+    void refresh();
+    const id = setInterval(() => { void refresh(); }, 8000);
     return () => clearInterval(id);
-  }, [load]);
+  }, [status, user]);
 
   const finished = totals.finished ?? { total: 0, count: 0 };
   const inFlight = ["waiting", "confirming", "confirmed", "sending"].reduce(
     (sum, s) => sum + (totals[s]?.count ?? 0),
     0
   );
+
+  const handleManualConfirm = async (depositId: string) => {
+    setConfirmingId(depositId);
+    try {
+      const res = await fetch(`/api/admin/payments/deposits/${depositId}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "confirm" }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error ?? "Failed to confirm deposit.");
+        return;
+      }
+      await load();
+    } finally {
+      setConfirmingId(null);
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -90,6 +122,7 @@ export default function AdminDepositsPage() {
               <th className="px-4 py-3 font-medium">USD Value</th>
               <th className="px-4 py-3 font-medium">Status</th>
               <th className="px-4 py-3 font-medium">Date</th>
+              <th className="px-4 py-3 font-medium">Action</th>
             </tr>
           </thead>
           <tbody>
@@ -105,11 +138,21 @@ export default function AdminDepositsPage() {
                   <StatusBadge status={d.status} />
                 </td>
                 <td className="px-4 py-3 text-xs text-muted-foreground">{new Date(d.createdAt).toLocaleString()}</td>
+                <td className="px-4 py-3">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={confirmingId === d.id || d.status === "finished"}
+                    onClick={() => handleManualConfirm(d.id)}
+                  >
+                    {confirmingId === d.id ? "Confirming..." : "Confirm"}
+                  </Button>
+                </td>
               </tr>
             ))}
             {deposits.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-sm text-muted-foreground">
+                <td colSpan={7} className="px-4 py-8 text-center text-sm text-muted-foreground">
                   No deposits match these filters.
                 </td>
               </tr>

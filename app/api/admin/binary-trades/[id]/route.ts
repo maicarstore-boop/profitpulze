@@ -43,7 +43,6 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       status: trade.status,
       result: trade.result,
       profitLoss: trade.profitLoss,
-      adminResultOverride: trade.adminResultOverride,
       priceSource: trade.priceSource,
       flagged: trade.flagged,
       adminNote: trade.adminNote,
