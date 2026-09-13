@@ -37,6 +37,9 @@ const TYPE_LABEL: Record<string, string> = {
   trade_stake: "Trade Stake",
   trade_payout: "Trade Payout",
   trade_refund: "Trade Refund",
+  spot_buy: "Spot Buy",
+  spot_sell: "Spot Sell",
+  convert: "Convert",
 };
 
 function TransactionsTab() {

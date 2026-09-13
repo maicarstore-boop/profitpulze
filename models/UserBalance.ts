@@ -8,6 +8,9 @@ const userBalanceSchema = new Schema(
     userId: { type: String, required: true, unique: true },
     currency: { type: String, default: "USDT" },
     available: { type: Number, required: true, default: DEMO_STARTING_BALANCE },
+    // Funds reserved against pending withdrawals. `available` stays spendable;
+    // total balance shown to the user is `available + locked`.
+    locked: { type: Number, required: true, default: 0 },
   },
   { timestamps: true }
 );

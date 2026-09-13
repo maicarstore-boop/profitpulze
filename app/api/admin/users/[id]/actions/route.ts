@@ -59,6 +59,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   } else if (action === "reset_2fa") {
     previousValue = { twoFactorEnabled: user.twoFactorEnabled };
     user.twoFactorEnabled = false;
+    user.twoFactorSecret = null;
     newValue = { twoFactorEnabled: false };
   }
 

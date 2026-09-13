@@ -15,6 +15,7 @@ import {
   FiBell,
   FiLayout,
   FiSettings,
+  FiSend,
 } from "react-icons/fi";
 import type { IconType } from "react-icons";
 import type { PermissionGroup } from "@/lib/auth/roles";
@@ -46,6 +47,15 @@ export const ADMIN_NAV: AdminNavGroup[] = [
   { label: "User Management", icon: FiUsers, href: "/admin/users", permission: "Users" },
   { label: "Trading Management", icon: FiTrendingUp, href: "/admin/trading", permission: "Trading" },
   { label: "Wallet Management", icon: FiCreditCard, href: "/admin/wallets", permission: "Wallets" },
+  {
+    label: "Payments",
+    icon: FiSend,
+    children: [
+      { label: "Deposits", href: "/admin/payments/deposits", permission: "Payments" },
+      { label: "Withdrawals", href: "/admin/payments/withdrawals", permission: "Payments" },
+      { label: "Webhook Logs", href: "/admin/payments/webhooks", permission: "Payments" },
+    ],
+  },
   { label: "Market Management", icon: FiPieChart, href: "/admin/markets", permission: "Markets" },
   { label: "Staking Management", icon: FiLock, href: "/admin/staking", permission: "Staking" },
   { label: "Copy Trading", icon: FiCopy, href: "/admin/copy-trading", permission: "Copy Trading" },

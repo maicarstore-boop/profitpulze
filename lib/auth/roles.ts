@@ -32,6 +32,7 @@ export const PERMISSION_GROUPS = [
   "Users",
   "Trading",
   "Wallets",
+  "Payments",
   "Markets",
   "Staking",
   "Copy Trading",
@@ -54,9 +55,9 @@ export type PermissionGroup = (typeof PERMISSION_GROUPS)[number];
  */
 export const DEFAULT_ROLE_PERMISSIONS: Record<AdminRole, PermissionGroup[]> = {
   super_admin: [...PERMISSION_GROUPS],
-  operations_manager: ["Users", "Trading", "Wallets", "Markets", "Staking", "Copy Trading", "Arbitrage", "Reports"],
+  operations_manager: ["Users", "Trading", "Wallets", "Payments", "Markets", "Staking", "Copy Trading", "Arbitrage", "Reports"],
   compliance_officer: ["Users", "Security", "Reports"],
-  finance_manager: ["Wallets", "Reports", "Staking"],
+  finance_manager: ["Wallets", "Payments", "Reports", "Staking"],
   support_agent: ["Users", "Trading", "Support"],
   moderator: ["Trading", "Support", "CMS", "Notifications"],
   read_only_auditor: ["Users", "Trading", "Wallets", "Markets", "Reports", "Security"],

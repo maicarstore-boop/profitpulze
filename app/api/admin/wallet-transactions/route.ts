@@ -4,7 +4,16 @@ import { connectToDatabase } from "@/lib/db";
 import { TransactionModel, type TransactionType } from "@/models/Transaction";
 import { UserModel } from "@/models/User";
 
-const TRANSACTION_TYPES: TransactionType[] = ["deposit", "withdrawal", "trade_stake", "trade_payout", "trade_refund"];
+const TRANSACTION_TYPES: TransactionType[] = [
+  "deposit",
+  "withdrawal",
+  "trade_stake",
+  "trade_payout",
+  "trade_refund",
+  "spot_buy",
+  "spot_sell",
+  "convert",
+];
 
 export async function GET(request: Request) {
   await requirePermission("Wallets");

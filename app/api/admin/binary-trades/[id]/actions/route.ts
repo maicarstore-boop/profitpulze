@@ -4,13 +4,14 @@ import { connectToDatabase } from "@/lib/db";
 import { BinaryTradeModel } from "@/models/BinaryTrade";
 import { UserModel } from "@/models/User";
 import { recordAuditLog } from "@/lib/audit";
-import { cancelTrade, TradeError } from "@/lib/binary-trading";
+import { cancelTrade, manualSettleTrade, TradeError } from "@/lib/binary-trading";
 
 const ACTIONS = [
   "cancel",
   "flag",
   "resolve",
   "note",
+  "manual_settle",
   "freeze_account",
   "unfreeze_account",
   "suspend_trading",
@@ -30,6 +31,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const action = body.action as Action;
   const reason: string = typeof body.reason === "string" ? body.reason.trim() : "";
   const note: string = typeof body.note === "string" ? body.note.trim() : "";
+  const result = typeof body.result === "string" && ["win", "lose"].includes(body.result) ? body.result : "lose";
 
   const trade = await BinaryTradeModel.findById(id).lean();
   if (!trade) {
@@ -96,6 +98,23 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           reason,
         });
         return NextResponse.json({ trade: { id, adminNote: note } });
+      }
+
+      case "manual_settle": {
+        if (trade.status !== "open") {
+          return NextResponse.json({ error: "Only open trades can be manually settled." }, { status: 422 });
+        }
+        const settled = await manualSettleTrade(id, result, reason || note || undefined);
+        await recordAuditLog({
+          ...auditBase,
+          action: "binary_trade.manual_settle",
+          targetType: "BinaryTrade",
+          targetId: id,
+          previousValue: { status: trade.status, result: trade.result, profitLoss: trade.profitLoss },
+          newValue: { status: settled.status, result: settled.result, profitLoss: settled.profitLoss, exitPrice: settled.exitPrice },
+          reason: reason || note || "Manual override",
+        });
+        return NextResponse.json({ trade: { id, status: settled.status, result: settled.result, profitLoss: settled.profitLoss } });
       }
 
       case "freeze_account":

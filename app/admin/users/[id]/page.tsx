@@ -2,6 +2,7 @@
 
 import { useEffect, useState, use, useCallback } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   FiArrowLeft,
   FiLock,
@@ -11,6 +12,8 @@ import {
   FiShield,
   FiCheckCircle,
   FiXCircle,
+  FiEdit2,
+  FiTrash2,
 } from "react-icons/fi";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -18,7 +21,6 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Tabs } from "@/components/ui/tabs";
 import { StatusBadge } from "@/components/admin/status-badge";
-import { holdings, recentActivity } from "@/lib/portfolio-data";
 import { supportTickets } from "@/lib/admin-data";
 import { ALL_ROLES, ROLE_LABELS } from "@/lib/auth/roles";
 import { useAuth } from "@/components/auth/auth-provider";
@@ -56,17 +58,32 @@ interface LoginLogEntry {
   createdAt: string;
 }
 
+interface WalletTransactionEntry {
+  id: string;
+  type: string;
+  amount: number;
+  note: string;
+  createdAt: string;
+}
+
 export default function AdminUserDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  const router = useRouter();
   const { user: currentAdmin } = useAuth();
   const [user, setUser] = useState<AdminUserDetail | null>(null);
   const [auditLog, setAuditLog] = useState<AuditEntry[]>([]);
   const [loginHistory, setLoginHistory] = useState<LoginLogEntry[]>([]);
+  const [wallet, setWallet] = useState<{ available: number; locked: number; currency: string } | null>(null);
+  const [holdings, setHoldings] = useState<{ symbol: string; quantity: number }[]>([]);
+  const [transactions, setTransactions] = useState<WalletTransactionEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedRole, setSelectedRole] = useState("");
+  const [editEmail, setEditEmail] = useState("");
+  const [deleteConfirm, setDeleteConfirm] = useState("");
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -75,7 +92,11 @@ export default function AdminUserDetailPage({ params }: { params: Promise<{ id: 
       const data = await res.json();
       setUser(data.user);
       setAuditLog(data.auditLog ?? []);
+      setWallet(data.wallet ?? null);
+      setHoldings(data.holdings ?? []);
+      setTransactions(data.transactions ?? []);
       setSelectedRole(data.user.role);
+      setEditEmail(data.user.email);
 
       const loginRes = await fetch(`/api/admin/login-logs?email=${encodeURIComponent(data.user.email)}&limit=8`);
       if (loginRes.ok) {
@@ -124,6 +145,37 @@ export default function AdminUserDetailPage({ params }: { params: Promise<{ id: 
       await load();
     }
     setBusy(null);
+  };
+
+  const saveEmail = async () => {
+    setBusy("edit");
+    setError(null);
+    const res = await fetch(`/api/admin/users/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: editEmail, reason: reason || undefined }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      setError(data.error ?? "Update failed.");
+    } else {
+      setReason("");
+      await load();
+    }
+    setBusy(null);
+  };
+
+  const deleteUser = async () => {
+    setBusy("delete");
+    setError(null);
+    const res = await fetch(`/api/admin/users/${id}`, { method: "DELETE" });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setError(data.error ?? "Delete failed.");
+      setBusy(null);
+      return;
+    }
+    router.push("/admin/users");
   };
 
   if (loading) {
@@ -212,6 +264,64 @@ export default function AdminUserDetailPage({ params }: { params: Promise<{ id: 
             </Button>
             {!isSuperAdmin && <p className="text-xs text-muted-foreground">Only Super Admins can change roles.</p>}
           </div>
+
+          {isSuperAdmin && (
+            <div className="flex flex-col gap-3 border-t border-border pt-4 sm:flex-row sm:items-end">
+              <div className="w-full sm:w-80">
+                <label className="text-xs text-muted-foreground">Email address</label>
+                <Input value={editEmail} onChange={(e) => setEditEmail(e.target.value)} className="mt-1" />
+              </div>
+              <Button size="sm" disabled={busy === "edit" || editEmail.trim().toLowerCase() === user.email} onClick={saveEmail}>
+                <FiEdit2 className="h-3.5 w-3.5" /> Save Email
+              </Button>
+            </div>
+          )}
+
+          {isSuperAdmin && (
+            <div className="space-y-3 rounded-lg border border-danger/30 bg-danger/5 p-4">
+              <div>
+                <p className="text-sm font-medium text-danger">Danger Zone</p>
+                <p className="text-xs text-muted-foreground">
+                  Permanently delete this account. This cannot be undone and only Super Admins can do this.
+                </p>
+              </div>
+              {!showDeleteConfirm ? (
+                <Button size="sm" variant="danger" onClick={() => setShowDeleteConfirm(true)}>
+                  <FiTrash2 className="h-3.5 w-3.5" /> Delete User
+                </Button>
+              ) : (
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+                  <div className="flex-1">
+                    <label className="text-xs text-muted-foreground">
+                      Type <span className="font-mono">{user.email}</span> to confirm
+                    </label>
+                    <Input value={deleteConfirm} onChange={(e) => setDeleteConfirm(e.target.value)} className="mt-1" />
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="danger"
+                      disabled={busy === "delete" || deleteConfirm !== user.email}
+                      onClick={deleteUser}
+                    >
+                      <FiTrash2 className="h-3.5 w-3.5" /> Confirm Delete
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={busy === "delete"}
+                      onClick={() => {
+                        setShowDeleteConfirm(false);
+                        setDeleteConfirm("");
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -225,23 +335,38 @@ export default function AdminUserDetailPage({ params }: { params: Promise<{ id: 
                 <Card>
                   <CardHeader><CardTitle>Wallet Balances</CardTitle></CardHeader>
                   <CardContent className="space-y-2 pt-0">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="font-medium">USDT (cash)</span>
+                      <span className="text-muted-foreground">
+                        {wallet ? wallet.available.toFixed(2) : "—"}
+                        {wallet && wallet.locked > 0 ? ` (+${wallet.locked.toFixed(2)} locked)` : ""}
+                      </span>
+                    </div>
                     {holdings.map((h) => (
                       <div key={h.symbol} className="flex items-center justify-between text-sm">
                         <span className="font-medium">{h.symbol}</span>
                         <span className="text-muted-foreground">{h.quantity}</span>
                       </div>
                     ))}
+                    {holdings.length === 0 && (
+                      <p className="text-xs text-muted-foreground">No crypto asset holdings.</p>
+                    )}
                   </CardContent>
                 </Card>
                 <Card>
-                  <CardHeader><CardTitle>Recent Trading Activity</CardTitle></CardHeader>
+                  <CardHeader><CardTitle>Recent Wallet Activity</CardTitle></CardHeader>
                   <CardContent className="space-y-2 pt-0">
-                    {recentActivity.map((a) => (
-                      <div key={a.id} className="flex items-center justify-between text-sm">
-                        <span>{a.type} {a.asset}</span>
-                        <span className="text-muted-foreground">{a.amount}</span>
+                    {transactions.map((t) => (
+                      <div key={t.id} className="flex items-center justify-between text-sm">
+                        <span className="truncate">{t.note || t.type}</span>
+                        <span className={t.amount >= 0 ? "text-success" : "text-danger"}>
+                          {t.amount >= 0 ? "+" : ""}${t.amount.toFixed(2)}
+                        </span>
                       </div>
                     ))}
+                    {transactions.length === 0 && (
+                      <p className="text-xs text-muted-foreground">No wallet activity recorded for this user yet.</p>
+                    )}
                   </CardContent>
                 </Card>
               </div>

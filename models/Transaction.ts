@@ -10,6 +10,9 @@ const TRANSACTION_TYPES = [
   "stake_lock",
   "stake_unlock",
   "stake_reward",
+  "spot_buy",
+  "spot_sell",
+  "convert",
 ] as const;
 
 const transactionSchema = new Schema(

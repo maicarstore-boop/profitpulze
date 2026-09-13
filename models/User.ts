@@ -40,6 +40,16 @@ const userSchema = new Schema(
       type: Boolean,
       default: false,
     },
+    twoFactorSecret: {
+      type: String,
+      default: null,
+      select: false,
+    },
+    transactionPasswordHash: {
+      type: String,
+      default: null,
+      select: false,
+    },
     tradingSuspended: {
       type: Boolean,
       default: false,

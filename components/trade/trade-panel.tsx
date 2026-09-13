@@ -24,40 +24,102 @@ export interface PlacedOrder {
 export function TradePanel({
   symbol,
   price,
-  balance = 12480.32,
+  balance,
+  holdingQty,
   onPlaceOrder,
+  onFilled,
 }: {
   symbol: string;
   price: number;
-  balance?: number;
+  /** Available USDT balance, used to validate/size Buy orders. */
+  balance: number;
+  /** Quantity of `symbol` currently held, used to validate/size Sell orders. */
+  holdingQty: number;
   onPlaceOrder: (order: PlacedOrder) => void;
+  /** Called after a Market order is actually executed against the backend, so the parent can refresh balance/holdings. */
+  onFilled: () => void;
 }) {
   const [side, setSide] = useState<"buy" | "sell">("buy");
   const [orderType, setOrderType] = useState<OrderType>("Limit");
   const [limitPrice, setLimitPrice] = useState(price.toFixed(2));
   const [amount, setAmount] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const numericAmount = Number(amount) || 0;
   const effectivePrice = orderType === "Market" ? price : Number(limitPrice) || price;
   const total = numericAmount * effectivePrice;
 
+  const insufficientBalance = side === "buy" ? total > balance : numericAmount > holdingQty;
+
   const handlePercent = (pct: number) => {
-    const maxAmount = balance / effectivePrice;
-    setAmount(((maxAmount * pct) / 100).toFixed(6));
+    if (side === "sell") {
+      setAmount(((holdingQty * pct) / 100).toFixed(6));
+    } else {
+      const maxAmount = balance / effectivePrice;
+      setAmount(((maxAmount * pct) / 100).toFixed(6));
+    }
   };
 
-  const handleSubmit = () => {
-    if (!numericAmount) return;
-    onPlaceOrder({
-      id: `${Date.now()}`,
-      side,
-      type: orderType,
-      symbol,
-      price: effectivePrice,
-      amount: numericAmount,
-      status: orderType === "Market" ? "Filled" : "Open",
-      time: new Date().toLocaleTimeString("en-US", { hour12: false }),
-    });
+  const handleSubmit = async () => {
+    setError(null);
+    if (!numericAmount) {
+      setError("Enter an amount.");
+      return;
+    }
+    if (side === "buy" && total > balance) {
+      setError("Insufficient USDT balance.");
+      return;
+    }
+    if (side === "sell" && numericAmount > holdingQty) {
+      setError(`Insufficient ${symbol} balance.`);
+      return;
+    }
+
+    // Only Market orders execute for real — there's no order book/matching engine, so
+    // Limit/Stop-Limit just sit in the local "Open Orders" list without touching the backend.
+    if (orderType === "Market") {
+      setSubmitting(true);
+      try {
+        const res = await fetch("/api/trade/orders", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ symbol, side, amount: numericAmount }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          setError(data.error ?? "Failed to place order.");
+          return;
+        }
+        onPlaceOrder({
+          id: `${Date.now()}`,
+          side,
+          type: orderType,
+          symbol,
+          price: data.order.price,
+          amount: numericAmount,
+          status: "Filled",
+          time: new Date().toLocaleTimeString("en-US", { hour12: false }),
+        });
+        onFilled();
+      } catch {
+        setError("Network error. Please try again.");
+        return;
+      } finally {
+        setSubmitting(false);
+      }
+    } else {
+      onPlaceOrder({
+        id: `${Date.now()}`,
+        side,
+        type: orderType,
+        symbol,
+        price: effectivePrice,
+        amount: numericAmount,
+        status: "Open",
+        time: new Date().toLocaleTimeString("en-US", { hour12: false }),
+      });
+    }
     setAmount("");
   };
 
@@ -65,7 +127,10 @@ export function TradePanel({
     <div className="rounded-2xl border border-border bg-card p-4">
       <div className="grid grid-cols-2 gap-1 rounded-lg bg-muted p-1">
         <button
-          onClick={() => setSide("buy")}
+          onClick={() => {
+            setSide("buy");
+            setError(null);
+          }}
           className={cn(
             "rounded-md py-2 text-sm font-semibold transition-colors",
             side === "buy" ? "bg-success text-success-foreground" : "text-muted-foreground"
@@ -74,7 +139,10 @@ export function TradePanel({
           Buy
         </button>
         <button
-          onClick={() => setSide("sell")}
+          onClick={() => {
+            setSide("sell");
+            setError(null);
+          }}
           className={cn(
             "rounded-md py-2 text-sm font-semibold transition-colors",
             side === "sell" ? "bg-danger text-danger-foreground" : "text-muted-foreground"
@@ -118,7 +186,10 @@ export function TradePanel({
           <label className="text-xs text-muted-foreground">Amount ({symbol})</label>
           <Input
             value={amount}
-            onChange={(e) => setAmount(e.target.value)}
+            onChange={(e) => {
+              setAmount(e.target.value);
+              setError(null);
+            }}
             type="number"
             placeholder="0.00"
             className="mt-1"
@@ -139,20 +210,29 @@ export function TradePanel({
 
         <div className="flex items-center justify-between text-xs text-muted-foreground">
           <span>Available</span>
-          <span>${formatPrice(balance)} USDT</span>
+          <span className={cn("font-mono", insufficientBalance && "text-danger")}>
+            {side === "buy" ? `$${formatPrice(balance)} USDT` : `${holdingQty} ${symbol}`}
+          </span>
         </div>
         <div className="flex items-center justify-between text-xs text-muted-foreground">
           <span>Order Value</span>
           <span>${formatPrice(total)} USDT</span>
         </div>
 
+        {(error || (insufficientBalance && numericAmount > 0)) && (
+          <p className="rounded-md bg-danger/10 px-3 py-2 text-xs text-danger">
+            {error ?? (side === "buy" ? "Insufficient USDT balance." : `Insufficient ${symbol} balance.`)}
+          </p>
+        )}
+
         <Button
           onClick={handleSubmit}
+          disabled={!numericAmount || insufficientBalance || submitting}
           variant={side === "buy" ? "success" : "danger"}
           className="w-full"
           size="lg"
         >
-          {side === "buy" ? `Buy ${symbol}` : `Sell ${symbol}`}
+          {submitting ? "Placing…" : side === "buy" ? `Buy ${symbol}` : `Sell ${symbol}`}
         </Button>
       </div>
     </div>
