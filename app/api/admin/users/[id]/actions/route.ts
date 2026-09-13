@@ -4,12 +4,15 @@ import { requirePermission } from "@/lib/auth/session";
 import { connectToDatabase } from "@/lib/db";
 import { UserModel } from "@/models/User";
 import { recordAuditLog } from "@/lib/audit";
+import { hashPassword } from "@/lib/auth/password";
 
-const ACTIONS = ["freeze", "unfreeze", "suspend", "reactivate", "reset_2fa", "kyc_approve", "kyc_reject"] as const;
+const ACTIONS = ["freeze", "unfreeze", "suspend", "reactivate", "reset_2fa", "reset_password", "kyc_approve", "kyc_reject"] as const;
 
 const schema = z.object({
   action: z.enum(ACTIONS),
   reason: z.string().optional(),
+  newPassword: z.string().min(8).optional(),
+  password: z.string().min(8).optional(),
 });
 
 const STATUS_BY_ACTION: Partial<Record<(typeof ACTIONS)[number], "active" | "frozen" | "suspended">> = {
@@ -44,7 +47,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: "User not found." }, { status: 404 });
   }
 
-  const { action, reason } = parsed.data;
+  const { action, reason, newPassword, password } = parsed.data;
   let previousValue: unknown;
   let newValue: unknown;
 
@@ -61,6 +64,15 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     user.twoFactorEnabled = false;
     user.twoFactorSecret = null;
     newValue = { twoFactorEnabled: false };
+  } else if (action === "reset_password") {
+    const nextPassword = newPassword ?? password;
+    if (!nextPassword) {
+      return NextResponse.json({ error: "A new password is required." }, { status: 400 });
+    }
+
+    previousValue = { passwordHash: user.passwordHash ? "[redacted]" : null };
+    user.passwordHash = await hashPassword(nextPassword);
+    newValue = { passwordHash: "[redacted]" };
   }
 
   await user.save();
