@@ -82,6 +82,7 @@ export default function AdminUserDetailPage({ params }: { params: Promise<{ id: 
   const [error, setError] = useState<string | null>(null);
   const [selectedRole, setSelectedRole] = useState("");
   const [editEmail, setEditEmail] = useState("");
+  const [newPassword, setNewPassword] = useState("");
   const [deleteConfirm, setDeleteConfirm] = useState("");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
@@ -108,22 +109,31 @@ export default function AdminUserDetailPage({ params }: { params: Promise<{ id: 
   }, [id]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     load();
   }, [load]);
 
-  const runAction = async (action: string) => {
+  const runAction = async (action: string, extraPayload: Record<string, unknown> = {}) => {
     setBusy(action);
     setError(null);
+
+    const body = {
+      action,
+      reason: reason || undefined,
+      ...extraPayload,
+    };
+
     const res = await fetch(`/api/admin/users/${id}/actions`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action, reason: reason || undefined }),
+      body: JSON.stringify(body),
     });
     const data = await res.json();
     if (!res.ok) {
       setError(data.error ?? "Action failed.");
     } else {
       setReason("");
+      setNewPassword("");
       await load();
     }
     setBusy(null);
@@ -231,6 +241,26 @@ export default function AdminUserDetailPage({ params }: { params: Promise<{ id: 
             <Button size="sm" variant="outline" disabled={!!busy} onClick={() => runAction("reset_2fa")}>
               <FiShield className="h-3.5 w-3.5" /> Reset 2FA
             </Button>
+            <div className="flex w-full flex-col gap-3 border-t border-border pt-4 sm:flex-row sm:items-end">
+              <div className="w-full sm:w-72">
+                <label className="text-xs text-muted-foreground">New password</label>
+                <Input
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="Set a temporary password"
+                  className="mt-1"
+                />
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={!!busy || newPassword.length < 8}
+                onClick={() => runAction("reset_password", { newPassword })}
+              >
+                <FiUnlock className="h-3.5 w-3.5" /> Reset Password
+              </Button>
+            </div>
             {user.kycStatus === "pending" && (
               <>
                 <Button size="sm" variant="success" disabled={!!busy} onClick={() => runAction("kyc_approve")}>
