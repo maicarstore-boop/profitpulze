@@ -8,6 +8,7 @@ export const NOTIFICATION_TYPES = [
   "withdrawal_approved",
   "withdrawal_completed",
   "withdrawal_failed",
+  "support_reply",
 ] as const;
 
 const notificationSchema = new Schema(

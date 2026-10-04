@@ -111,7 +111,7 @@ export async function openTrade(input: OpenTradeInput) {
 
 function computeSettlement(direction: TradeDirection, entryPrice: number, exitPrice: number, stake: number, payoutRate: number) {
   if (exitPrice === entryPrice) {
-    return { result: "draw" as TradeResult, profitLoss: 0 };
+    return { result: "lose" as TradeResult, profitLoss: -stake };
   }
   const priceWentUp = exitPrice > entryPrice;
   const won = (direction === "up") === priceWentUp;
@@ -151,8 +151,8 @@ async function settleTradeById(tradeId: string, exitPrice: number, now: Date) {
     recordedAt: now,
   });
 
-  if (result === "win" || result === "draw") {
-    const creditAmount = result === "win" ? updated.stake + profitLoss : updated.stake;
+  if (result === "win") {
+    const creditAmount = updated.stake + profitLoss;
     const balance = await adjustBalance(updated.userId, creditAmount);
     await recordTransaction({
       userId: updated.userId,
@@ -161,7 +161,7 @@ async function settleTradeById(tradeId: string, exitPrice: number, now: Date) {
       balanceAfter: balance.available,
       referenceType: "BinaryTrade",
       referenceId: tradeId,
-      note: `${result === "win" ? "Win" : "Draw"} payout for ${updated.symbol} trade`,
+      note: `Win payout for ${updated.symbol} trade`,
     });
   }
 

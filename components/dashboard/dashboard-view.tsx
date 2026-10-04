@@ -77,24 +77,24 @@ export function DashboardView() {
   const watchlist = liveCoins.slice(0, 5);
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-      <div className="grid gap-4 sm:grid-cols-3">
+    <div className="mx-auto max-w-7xl px-3 py-6 sm:px-6 lg:px-8">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <Card className="sm:col-span-2">
           <CardContent className="pt-6">
             <div className="text-xs text-muted-foreground">Portfolio Value</div>
-            <div className="mt-1 text-3xl font-bold">
+            <div className="mt-1 text-2xl font-bold sm:text-3xl">
               ${totalValue.toLocaleString(undefined, { maximumFractionDigits: 2 })}
             </div>
             <div className={cn("mt-1 flex items-center gap-1 text-sm font-medium", positive ? "text-success" : "text-danger")}>
               {positive ? <FiArrowUp className="h-3.5 w-3.5" /> : <FiArrowDown className="h-3.5 w-3.5" />}
               ${Math.abs(dayChange).toLocaleString(undefined, { maximumFractionDigits: 2 })} ({Math.abs(dayChangePct).toFixed(2)}%) today
             </div>
-            <div className="mt-4 flex gap-3">
-              <Button size="sm" onClick={() => setDepositOpen((v) => !v)}>
+            <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+              <Button size="sm" onClick={() => setDepositOpen((v) => !v)} className="w-full sm:w-auto">
                 <FiPlus className="h-3.5 w-3.5" /> Deposit
               </Button>
-              <Link href="/wallet?tab=withdraw">
-                <Button size="sm" variant="outline"><FiSend className="h-3.5 w-3.5" /> Withdraw</Button>
+              <Link href="/wallet?tab=withdraw" className="w-full sm:w-auto">
+                <Button size="sm" variant="outline" className="w-full sm:w-auto"><FiSend className="h-3.5 w-3.5" /> Withdraw</Button>
               </Link>
             </div>
           </CardContent>
@@ -125,59 +125,104 @@ export function DashboardView() {
       <div className="mt-8 grid gap-8 lg:grid-cols-[1fr_320px]">
         <div>
           <h2 className="text-lg font-semibold">Holdings</h2>
-          <div className="mt-4 overflow-x-auto rounded-2xl border border-border">
-            <table className="w-full min-w-[560px] text-sm">
-              <thead>
-                <tr className="border-b border-border text-left text-xs text-muted-foreground">
-                  <th className="px-4 py-3 font-medium">Asset</th>
-                  <th className="px-4 py-3 font-medium">Quantity</th>
-                  <th className="px-4 py-3 font-medium">Price</th>
-                  <th className="px-4 py-3 font-medium">24h</th>
-                  <th className="px-4 py-3 font-medium">Value</th>
-                  <th className="px-4 py-3" />
-                </tr>
-              </thead>
-              <tbody>
-                <tr className="border-b border-border last:border-0 hover:bg-accent">
-                  <td className="px-4 py-3 font-medium">USDT</td>
-                  <td className="px-4 py-3 text-muted-foreground">
-                    {cashBalance.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                  </td>
-                  <td className="px-4 py-3">$1.00</td>
-                  <td className="px-4 py-3 text-muted-foreground">—</td>
-                  <td className="px-4 py-3 font-medium">${formatCompact(cashBalance)}</td>
-                  <td className="px-4 py-3 text-right">
-                    <Link href="/wallet?tab=deposit">
-                      <Button size="sm" variant="outline">Deposit</Button>
-                    </Link>
-                  </td>
-                </tr>
-                {rows.map((row) => {
-                  const rowPositive = row.coin.change24h >= 0;
-                  return (
-                    <tr
-                      key={row.symbol}
-                      onClick={() => router.push(`/convert?from=${row.symbol}`)}
-                      className="cursor-pointer border-b border-border last:border-0 hover:bg-accent"
-                    >
-                      <td className="px-4 py-3 font-medium">{row.symbol}</td>
-                      <td className="px-4 py-3 text-muted-foreground">{row.quantity}</td>
-                      <td className="px-4 py-3">${formatPrice(row.coin.price)}</td>
-                      <td className={cn("px-4 py-3", rowPositive ? "text-success" : "text-danger")}>
-                        {rowPositive ? "+" : ""}
-                        {row.coin.change24h.toFixed(2)}%
-                      </td>
-                      <td className="px-4 py-3 font-medium">${formatCompact(row.value)}</td>
-                      <td className="px-4 py-3 text-right">
-                        <Link href={`/trade/${row.symbol}-USDT`} onClick={(e) => e.stopPropagation()}>
-                          <Button size="sm" variant="outline">Trade</Button>
-                        </Link>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+
+          <div className="mt-4 hidden rounded-2xl border border-border md:block">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[560px] text-sm">
+                <thead>
+                  <tr className="border-b border-border text-left text-xs text-muted-foreground">
+                    <th className="px-4 py-3 font-medium">Asset</th>
+                    <th className="px-4 py-3 font-medium">Quantity</th>
+                    <th className="px-4 py-3 font-medium">Price</th>
+                    <th className="px-4 py-3 font-medium">24h</th>
+                    <th className="px-4 py-3 font-medium">Value</th>
+                    <th className="px-4 py-3" />
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr className="border-b border-border last:border-0 hover:bg-accent">
+                    <td className="px-4 py-3 font-medium">USDT</td>
+                    <td className="px-4 py-3 text-muted-foreground">
+                      {cashBalance.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                    </td>
+                    <td className="px-4 py-3">$1.00</td>
+                    <td className="px-4 py-3 text-muted-foreground">—</td>
+                    <td className="px-4 py-3 font-medium">${formatCompact(cashBalance)}</td>
+                    <td className="px-4 py-3 text-right">
+                      <Link href="/wallet?tab=deposit">
+                        <Button size="sm" variant="outline">Deposit</Button>
+                      </Link>
+                    </td>
+                  </tr>
+                  {rows.map((row) => {
+                    const rowPositive = row.coin.change24h >= 0;
+                    return (
+                      <tr
+                        key={row.symbol}
+                        onClick={() => router.push(`/convert?from=${row.symbol}`)}
+                        className="cursor-pointer border-b border-border last:border-0 hover:bg-accent"
+                      >
+                        <td className="px-4 py-3 font-medium">{row.symbol}</td>
+                        <td className="px-4 py-3 text-muted-foreground">{row.quantity}</td>
+                        <td className="px-4 py-3">${formatPrice(row.coin.price)}</td>
+                        <td className={cn("px-4 py-3", rowPositive ? "text-success" : "text-danger")}>
+                          {rowPositive ? "+" : ""}
+                          {row.coin.change24h.toFixed(2)}%
+                        </td>
+                        <td className="px-4 py-3 font-medium">${formatCompact(row.value)}</td>
+                        <td className="px-4 py-3 text-right">
+                          <Link href={`/trade/${row.symbol}-USDT`} onClick={(e) => e.stopPropagation()}>
+                            <Button size="sm" variant="outline">Trade</Button>
+                          </Link>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="mt-4 space-y-3 md:hidden">
+            <div className="rounded-2xl border border-border p-3">
+              <div className="flex items-center justify-between">
+                <div className="font-medium">USDT</div>
+                <div className="text-sm text-muted-foreground">${formatCompact(cashBalance)}</div>
+              </div>
+              <div className="mt-2 flex items-center justify-between text-sm text-muted-foreground">
+                <span>{cashBalance.toLocaleString(undefined, { maximumFractionDigits: 2 })} held</span>
+                <Link href="/wallet?tab=deposit">
+                  <Button size="sm" variant="outline">Deposit</Button>
+                </Link>
+              </div>
+            </div>
+            {rows.map((row) => {
+              const rowPositive = row.coin.change24h >= 0;
+              return (
+                <Link
+                  key={row.symbol}
+                  href={`/trade/${row.symbol}-USDT`}
+                  className="block rounded-2xl border border-border p-3"
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="font-medium">{row.symbol}</div>
+                      <div className="text-sm text-muted-foreground">{row.quantity} held</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-medium">${formatCompact(row.value)}</div>
+                      <div className={cn("text-xs", rowPositive ? "text-success" : "text-danger")}>
+                        {rowPositive ? "+" : ""}{row.coin.change24h.toFixed(2)}%
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-2 flex items-center justify-between text-sm text-muted-foreground">
+                    <span>${formatPrice(row.coin.price)}</span>
+                    <span>Trade</span>
+                  </div>
+                </Link>
+              );
+            })}
           </div>
 
           <h2 className="mt-8 text-lg font-semibold">Recent Activity</h2>
