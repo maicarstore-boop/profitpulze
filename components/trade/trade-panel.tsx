@@ -39,7 +39,7 @@ export function TradePanel({
   /** Called after a Market order is actually executed against the backend, so the parent can refresh balance/holdings. */
   onFilled: () => void;
 }) {
-  const [side, setSide] = useState<"buy" | "sell">("buy");
+  const [side, setSide] = useState<"buy" | "sell">("sell");
   const [orderType, setOrderType] = useState<OrderType>("Limit");
   const [limitPrice, setLimitPrice] = useState(price.toFixed(2));
   const [amount, setAmount] = useState("");

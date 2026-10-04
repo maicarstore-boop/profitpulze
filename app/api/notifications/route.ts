@@ -13,6 +13,8 @@ export async function GET() {
       title: n.title,
       message: n.message,
       read: n.read,
+      relatedType: n.relatedType,
+      relatedId: n.relatedId,
       createdAt: n.createdAt,
     })),
   });

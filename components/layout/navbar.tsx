@@ -7,6 +7,7 @@ import { FiMenu, FiX, FiTrendingUp, FiUser, FiLogOut, FiShield, FiSettings } fro
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { NotificationBell } from "@/components/layout/notification-bell";
+import { SupportMessagesButton } from "@/components/layout/support-messages-button";
 import { useAuth } from "@/components/auth/auth-provider";
 import { isAdminRole } from "@/lib/auth/roles";
 
@@ -33,40 +34,47 @@ function AuthActions({ onNavigate }: { onNavigate?: () => void }) {
 
   if (user) {
     return (
-      <div className="flex items-center gap-2">
-        <NotificationBell />
-        <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
-          <FiUser className="h-3.5 w-3.5" />
-          {user.email}
-        </span>
-        <Link href="/settings" onClick={onNavigate}>
-          <Button variant="ghost" size="sm">
-            <FiSettings className="h-3.5 w-3.5" /> Settings
-          </Button>
-        </Link>
-        {isAdminRole(user.role) && (
-          <Link href="/admin" onClick={onNavigate}>
-            <Button variant="outline" size="sm">
-              <FiShield className="h-3.5 w-3.5" /> Admin
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-2">
+        <div className="flex items-center justify-between gap-2 sm:justify-start">
+          <div className="flex items-center gap-1">
+            <NotificationBell />
+            <SupportMessagesButton onNavigate={onNavigate} />
+          </div>
+          <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
+            <FiUser className="h-3.5 w-3.5" />
+            <span className="truncate max-w-[120px] sm:max-w-none">{user.email}</span>
+          </span>
+        </div>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <Link href="/settings" onClick={onNavigate}>
+            <Button variant="ghost" size="sm" className="w-full sm:w-auto">
+              <FiSettings className="h-3.5 w-3.5" /> Settings
             </Button>
           </Link>
-        )}
-        <Button variant="ghost" size="sm" onClick={handleLogout}>
-          <FiLogOut className="h-3.5 w-3.5" /> Log Out
-        </Button>
+          {isAdminRole(user.role) && (
+            <Link href="/admin" onClick={onNavigate}>
+              <Button variant="outline" size="sm" className="w-full sm:w-auto">
+                <FiShield className="h-3.5 w-3.5" /> Admin
+              </Button>
+            </Link>
+          )}
+          <Button variant="ghost" size="sm" onClick={handleLogout} className="w-full sm:w-auto">
+            <FiLogOut className="h-3.5 w-3.5" /> Log Out
+          </Button>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="flex gap-2">
+    <div className="flex flex-col gap-2 sm:flex-row">
       <Link href="/login" onClick={onNavigate}>
-        <Button variant="ghost" size="sm">
+        <Button variant="ghost" size="sm" className="w-full sm:w-auto">
           Log In
         </Button>
       </Link>
       <Link href="/register" onClick={onNavigate}>
-        <Button variant="primary" size="sm">
+        <Button variant="primary" size="sm" className="w-full sm:w-auto">
           Sign Up
         </Button>
       </Link>
@@ -116,20 +124,23 @@ export function Navbar() {
 
       {open && (
         <div className="border-t border-border px-4 py-4 md:hidden">
-          <nav className="flex flex-col gap-4">
+          <nav className="flex flex-col gap-3">
             {NAV_LINKS.map((link) => (
               <Link
                 key={link.href}
                 href={link.href}
                 onClick={() => setOpen(false)}
-                className="text-sm font-medium text-muted-foreground hover:text-foreground"
+                className="rounded-md px-2 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
               >
                 {link.label}
               </Link>
             ))}
           </nav>
-          <div className="mt-4 flex items-center justify-between gap-3">
-            <ThemeToggle />
+          <div className="mt-4 flex flex-col gap-3">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-xs uppercase tracking-wide text-muted-foreground">Account</span>
+              <ThemeToggle />
+            </div>
             <AuthActions onNavigate={() => setOpen(false)} />
           </div>
         </div>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { FiBell } from "react-icons/fi";
 import { cn } from "@/lib/utils";
 
@@ -9,10 +10,13 @@ interface NotificationItem {
   title: string;
   message: string;
   read: boolean;
+  relatedType: string | null;
+  relatedId: string | null;
   createdAt: string;
 }
 
 export function NotificationBell() {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<NotificationItem[]>([]);
 
@@ -35,9 +39,13 @@ export function NotificationBell() {
     setOpen((v) => !v);
   };
 
-  const handleItemClick = async (id: string) => {
-    await fetch(`/api/notifications/${id}/read`, { method: "POST" });
-    setItems((prev) => prev.map((i) => (i.id === id ? { ...i, read: true } : i)));
+  const handleItemClick = async (item: NotificationItem) => {
+    await fetch(`/api/notifications/${item.id}/read`, { method: "POST" });
+    setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, read: true } : i)));
+    if (item.relatedType === "SupportConversation" && item.relatedId) {
+      setOpen(false);
+      router.push(`/support?c=${item.relatedId}`);
+    }
   };
 
   return (
@@ -66,7 +74,7 @@ export function NotificationBell() {
               {items.map((item) => (
                 <button
                   key={item.id}
-                  onClick={() => handleItemClick(item.id)}
+                  onClick={() => handleItemClick(item)}
                   className={cn(
                     "flex w-full flex-col gap-0.5 border-b border-border px-4 py-3 text-left last:border-0 hover:bg-accent",
                     !item.read && "bg-primary/5"
