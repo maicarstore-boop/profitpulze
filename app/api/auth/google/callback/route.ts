@@ -5,6 +5,7 @@ import { UserModel } from "@/models/User";
 import { createSession } from "@/lib/auth/session";
 import { exchangeGoogleCode, verifyGoogleIdToken, isGoogleConfigured } from "@/lib/auth/google";
 import { recordLoginAttempt } from "@/lib/login-log";
+import { getOrCreateBalance } from "@/lib/wallet";
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -51,6 +52,8 @@ export async function GET(request: Request) {
         user = await UserModel.create({ email, googleId: identity.googleId });
       }
     }
+
+    await getOrCreateBalance(user._id.toString());
 
     if (user.status !== "active") {
       await recordLoginAttempt({ email, userId: user._id.toString(), status: "failed", reason: `Account ${user.status}`, provider: "google", request });

@@ -4,6 +4,7 @@ import { connectToDatabase } from "@/lib/db";
 import { UserModel } from "@/models/User";
 import { hashPassword } from "@/lib/auth/password";
 import { createSession } from "@/lib/auth/session";
+import { getOrCreateBalance } from "@/lib/wallet";
 
 const schema = z.object({
   email: z.string().min(1).email(),
@@ -29,6 +30,7 @@ export async function POST(request: Request) {
 
   const passwordHash = await hashPassword(parsed.data.password);
   const user = await UserModel.create({ email, passwordHash });
+  await getOrCreateBalance(user._id.toString());
 
   await createSession(user._id.toString(), user.email, user.role);
 

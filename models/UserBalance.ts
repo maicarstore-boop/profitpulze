@@ -1,13 +1,13 @@
 import "server-only";
 import { Schema, model, models, type InferSchemaType, type Model } from "mongoose";
 
-export const DEMO_STARTING_BALANCE = 10_000;
+export const INITIAL_BALANCE = 0;
 
 const userBalanceSchema = new Schema(
   {
     userId: { type: String, required: true, unique: true },
     currency: { type: String, default: "USDT" },
-    available: { type: Number, required: true, default: DEMO_STARTING_BALANCE },
+    available: { type: Number, required: true, default: INITIAL_BALANCE },
     // Funds reserved against pending withdrawals. `available` stays spendable;
     // total balance shown to the user is `available + locked`.
     locked: { type: Number, required: true, default: 0 },
