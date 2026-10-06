@@ -6,11 +6,11 @@ import { SupportChatWidget } from "@/components/support/support-chat-widget";
 
 export default function MainLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex h-screen w-full flex-col overflow-hidden bg-background">
+    <div className="flex min-h-screen w-full flex-col overflow-x-hidden bg-background">
       <Navbar />
       <AnnouncementBanner />
-      <main className="flex-1 min-w-0 overflow-x-hidden overflow-y-hidden md:overflow-y-auto md:pb-0">
-        <div className="w-full min-w-0 pb-20 md:pb-0">{children}</div>
+      <main className="flex-1 min-w-0 overflow-x-hidden overflow-y-auto pb-[5.5rem] md:pb-0">
+        <div className="w-full min-w-0 md:pb-0">{children}</div>
         <Footer />
       </main>
       <BottomTabBar />

@@ -1,6 +1,6 @@
 import "server-only";
 import { connectToDatabase } from "@/lib/db";
-import { UserBalanceModel, DEMO_STARTING_BALANCE } from "@/models/UserBalance";
+import { UserBalanceModel, INITIAL_BALANCE } from "@/models/UserBalance";
 import { TransactionModel, type TransactionType } from "@/models/Transaction";
 
 export class InsufficientFundsError extends Error {}
@@ -9,7 +9,7 @@ export async function getOrCreateBalance(userId: string) {
   await connectToDatabase();
   let balance = await UserBalanceModel.findOne({ userId });
   if (!balance) {
-    balance = await UserBalanceModel.create({ userId, available: DEMO_STARTING_BALANCE });
+    balance = await UserBalanceModel.create({ userId, available: INITIAL_BALANCE });
   }
   return balance;
 }
@@ -26,7 +26,7 @@ export async function getOrCreateBalance(userId: string) {
  */
 export async function adjustBalance(userId: string, delta: number) {
   await connectToDatabase();
-  await getOrCreateBalance(userId); // ensures the doc exists (seeded with the demo starting balance) before the $inc below
+  await getOrCreateBalance(userId); // ensures the doc exists with a zero starting balance before the $inc below
   const updated = await UserBalanceModel.findOneAndUpdate(
     { userId },
     { $inc: { available: Number(delta.toFixed(2)) } },
