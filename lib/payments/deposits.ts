@@ -5,7 +5,7 @@ import { DepositModel, type DepositStatus } from "@/models/Deposit";
 import { adjustBalance, recordTransaction } from "@/lib/wallet";
 import { createNotification } from "@/lib/notifications";
 import { findSupportedCurrency } from "@/lib/payments/supported-currencies";
-import { createPayment, type NowPaymentsPayment } from "@/lib/payments/nowpayments-client";
+import { createPayment, getPaymentStatus, type NowPaymentsPayment } from "@/lib/payments/nowpayments-client";
 
 export class DepositError extends Error {}
 
@@ -59,6 +59,73 @@ export interface NowPaymentsIpnPayload {
   [key: string]: unknown;
 }
 
+type DepositDocument = InstanceType<typeof DepositModel>;
+
+const TERMINAL_DEPOSIT_STATUSES = new Set<string>(["finished", "failed", "refunded", "expired"]);
+
+/**
+ * Atomically marks a deposit as credited. Returns false if it was already credited, so the
+ * wallet is credited at most once even when the IPN, the status sync and an admin manual
+ * confirmation race each other.
+ */
+async function claimDepositCredit(depositId: string) {
+  const claimed = await DepositModel.findOneAndUpdate(
+    { _id: depositId, creditedAt: null },
+    { $set: { creditedAt: new Date() } },
+    { new: true }
+  );
+  return claimed?.creditedAt ?? null;
+}
+
+/**
+ * Applies a NOWPayments payment status (from a verified IPN or a server-side status lookup)
+ * to a deposit, crediting the wallet once the payment is "finished".
+ */
+async function applyDepositStatus(deposit: DepositDocument, status: string, actuallyPaid?: number) {
+  const previousStatus = deposit.status;
+  deposit.status = status as typeof deposit.status;
+  deposit.actuallyPaid = actuallyPaid ?? deposit.actuallyPaid;
+
+  if (previousStatus === "waiting" && status !== "waiting") {
+    await createNotification({
+      userId: deposit.userId,
+      type: "deposit_detected",
+      title: "Deposit detected",
+      message: `We've detected your ${deposit.payCurrency.toUpperCase()} deposit and are waiting for network confirmations.`,
+      relatedType: "Deposit",
+      relatedId: deposit._id.toString(),
+    });
+  }
+
+  if (status === "finished" && !deposit.creditedAt) {
+    const creditedAt = await claimDepositCredit(deposit._id.toString());
+    if (creditedAt) {
+      deposit.creditedAt = creditedAt;
+      const balance = await adjustBalance(deposit.userId, deposit.priceAmountUsd);
+      await recordTransaction({
+        userId: deposit.userId,
+        type: "deposit",
+        amount: deposit.priceAmountUsd,
+        balanceAfter: balance.available,
+        referenceType: "Deposit",
+        referenceId: deposit._id.toString(),
+        note: `Deposit of ${deposit.payCurrency.toUpperCase()} credited via NOWPayments`,
+      });
+
+      await createNotification({
+        userId: deposit.userId,
+        type: "deposit_confirmed",
+        title: "Deposit confirmed",
+        message: `$${deposit.priceAmountUsd.toFixed(2)} has been credited to your wallet.`,
+        relatedType: "Deposit",
+        relatedId: deposit._id.toString(),
+      });
+    }
+  }
+
+  await deposit.save();
+}
+
 /**
  * Applies a NOWPayments payment IPN. Idempotent via `creditedAt`: a deposit's balance is
  * credited at most once, no matter how many times the "finished" status IPN is retried or
@@ -72,47 +139,38 @@ export async function handleDepositIpn(payload: NowPaymentsIpnPayload) {
     return { handled: false as const, reason: "unknown_deposit" };
   }
 
-  const previousStatus = deposit.status;
-  deposit.status = payload.payment_status as typeof deposit.status;
-  deposit.actuallyPaid = payload.actually_paid ?? deposit.actuallyPaid;
   deposit.rawIpnPayload = payload;
-
-  if (previousStatus === "waiting" && payload.payment_status !== "waiting") {
-    await createNotification({
-      userId: deposit.userId,
-      type: "deposit_detected",
-      title: "Deposit detected",
-      message: `We've detected your ${deposit.payCurrency.toUpperCase()} deposit and are waiting for network confirmations.`,
-      relatedType: "Deposit",
-      relatedId: deposit._id.toString(),
-    });
-  }
-
-  if (payload.payment_status === "finished" && !deposit.creditedAt) {
-    const balance = await adjustBalance(deposit.userId, deposit.priceAmountUsd);
-    await recordTransaction({
-      userId: deposit.userId,
-      type: "deposit",
-      amount: deposit.priceAmountUsd,
-      balanceAfter: balance.available,
-      referenceType: "Deposit",
-      referenceId: deposit._id.toString(),
-      note: `Deposit of ${deposit.payCurrency.toUpperCase()} credited via NOWPayments`,
-    });
-    deposit.creditedAt = new Date();
-
-    await createNotification({
-      userId: deposit.userId,
-      type: "deposit_confirmed",
-      title: "Deposit confirmed",
-      message: `$${deposit.priceAmountUsd.toFixed(2)} has been credited to your wallet.`,
-      relatedType: "Deposit",
-      relatedId: deposit._id.toString(),
-    });
-  }
-
-  await deposit.save();
+  await applyDepositStatus(deposit, payload.payment_status, payload.actually_paid);
   return { handled: true as const, deposit };
+}
+
+/**
+ * Fallback for when the IPN never arrives (e.g. APP_BASE_URL not publicly reachable): asks
+ * NOWPayments directly for the payment's status and applies it. The status comes from an
+ * authenticated server-to-server call, never from the client, so it's as trustworthy as a
+ * signed IPN.
+ */
+export async function syncDepositStatus(depositId: string, userId: string) {
+  await connectToDatabase();
+
+  const deposit = await DepositModel.findOne({ _id: depositId, userId });
+  if (!deposit) return null;
+  if (TERMINAL_DEPOSIT_STATUSES.has(deposit.status) && (deposit.status !== "finished" || deposit.creditedAt)) {
+    return deposit;
+  }
+
+  try {
+    const payment = await getPaymentStatus(deposit.paymentId);
+    if (payment.payment_status && payment.payment_status !== deposit.status) {
+      const actuallyPaid = (payment as NowPaymentsPayment & { actually_paid?: number }).actually_paid;
+      await applyDepositStatus(deposit, payment.payment_status, actuallyPaid);
+    }
+  } catch (error) {
+    // Fall back to whatever we have stored; the IPN or the next poll can still update it.
+    console.error("Failed to sync deposit status from NOWPayments:", error);
+  }
+
+  return deposit;
 }
 
 export async function confirmDepositManually(depositId: string) {
@@ -124,6 +182,10 @@ export async function confirmDepositManually(depositId: string) {
   }
   if (deposit.creditedAt || deposit.status === "finished") {
     return deposit;
+  }
+  const creditedAt = await claimDepositCredit(deposit._id.toString());
+  if (!creditedAt) {
+    return (await DepositModel.findById(depositId)) ?? deposit;
   }
 
   const balance = await adjustBalance(deposit.userId, deposit.priceAmountUsd);
@@ -138,7 +200,7 @@ export async function confirmDepositManually(depositId: string) {
   });
 
   deposit.status = "finished";
-  deposit.creditedAt = new Date();
+  deposit.creditedAt = creditedAt;
   await deposit.save();
 
   await createNotification({

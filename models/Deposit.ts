@@ -4,6 +4,7 @@ import { Schema, model, models, type InferSchemaType, type Model } from "mongoos
 export const DEPOSIT_STATUSES = [
   "waiting",
   "confirming",
+  "partially_paid",
   "confirmed",
   "sending",
   "finished",
